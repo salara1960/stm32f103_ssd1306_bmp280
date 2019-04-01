@@ -6,7 +6,8 @@
 //-----------------------------------------------------------------------------
 
 //const char *ver = "ver. 0.1";
-const char *ver = "ver. 0.2";//with Usb device for Virtual Com Port
+//const char *ver = "ver. 0.2";//with Usb device for Virtual Com Port
+const char *ver = "ver. 0.3";//used pin PB12 like LED_ERROR (user's red led on board)
 
 I2C_HandleTypeDef hi2c2;
 HAL_StatusTypeDef i2cError = HAL_OK;
@@ -169,7 +170,7 @@ static void MX_I2C2_Init(void)
 }
 
 //------------------------------------------------------------------------------------------
-
+#ifdef SET_UART
 static void MX_USART1_Init(void)
 {
 
@@ -184,7 +185,7 @@ static void MX_USART1_Init(void)
   if (HAL_UART_Init(&huart1) != HAL_OK) Error_Handler();
 
 }
-
+#endif
 //----------------------------------------------------------------------------------------
 //	Out to UART1 data from buffer (like printf)
 //     txt - buffer with data for send to uart
@@ -193,8 +194,6 @@ static void MX_USART1_Init(void)
 //     addTime - flag insert or not TickCount before data
 void Report(char *txt, uint16_t len, bool addCRLF, bool addTime)
 {
-
-#ifdef SET_UART
 
 	if (!txt)  return;
 
@@ -205,7 +204,7 @@ void Report(char *txt, uint16_t len, bool addCRLF, bool addTime)
 	char *buf = (char *)calloc(1, dlen + 1);//get buffer for data in heap memory
 	if (!buf) return;
 
-	//create buffer with data for sending to UART1
+	//create buffer with data for sending to UART1 and USB
 	dlen = 0;
 	if (addTime) {
 		dlen = sprintf(buf, "[%06lu.%03lu] | ", HAL_GetTick()/1000, HAL_GetTick() % 1000);
@@ -214,8 +213,10 @@ void Report(char *txt, uint16_t len, bool addCRLF, bool addTime)
 	if (addCRLF) {
 		dlen += sprintf(buf+strlen(buf), "\r\n");
 	}
+#ifdef SET_UART
 	// send data to UART1
 	if (HAL_UART_Transmit(&huart1, (uint8_t *)buf, dlen, max_wait_ms) != HAL_OK) errLedOn(NULL);
+#endif
 	// send data to CDC_virtual_serial_port
 	if (CDC_Transmit_FS((uint8_t *)buf, dlen) != USBD_OK)
 		errLedOn(NULL);
@@ -223,8 +224,6 @@ void Report(char *txt, uint16_t len, bool addCRLF, bool addTime)
 		HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_SET);//LED OFF
 
 	free(buf);//release buffer's memory
-
-#endif
 
 }
 
@@ -277,7 +276,9 @@ int main(void)
     HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
     MX_RTC_Init();
     MX_I2C2_Init();
+#ifdef SET_UART
     MX_USART1_Init();
+#endif
     MX_USB_DEVICE_Init();
 
     uint16_t len;

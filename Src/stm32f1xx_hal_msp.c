@@ -192,7 +192,7 @@ void HAL_RTC_MspDeInit(RTC_HandleTypeDef* hrtc)
   }
 
 }
-
+#ifdef SET_UART
 /**
 * @brief UART MSP Initialization
 * This function configures the hardware resources used in this example
@@ -265,6 +265,8 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
   }
 
 }
+
+#endif
 
 /* USER CODE BEGIN 1 */
 
