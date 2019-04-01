@@ -7,7 +7,8 @@
 
 //const char *ver = "ver. 0.1";
 //const char *ver = "ver. 0.2";//with Usb device for Virtual Com Port
-const char *ver = "ver. 0.3";//used pin PB12 like LED_ERROR (user's red led on board)
+//const char *ver = "ver. 0.3";//used pin PB12 like LED_ERROR (user's red led on board)
+const char *ver = "ver. 0.3.1";//add msCounter to callback function when TIM4 to interrupt
 
 I2C_HandleTypeDef hi2c2;
 HAL_StatusTypeDef i2cError = HAL_OK;
@@ -20,6 +21,8 @@ uint32_t min_wait_ms = 350;
 uint32_t max_wait_ms = 1000;
 
 result_t sensors = {0.0, 0.0, 0.0};
+
+static uint16_t msCounter = wait_tick_def;
 
 //-----------------------------------------------------------------------------
 
@@ -53,6 +56,19 @@ void assert_failed(uint8_t *file, uint32_t line)
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == TIM4) HAL_IncTick();
+
+	//-------------   LED ON/OFF and show tickCounter to Screen   -----------
+	if (msCounter) msCounter--;
+	if (!msCounter) {
+		msCounter = wait_tick_def;
+		HAL_GPIO_WritePin(GPIOB, LED1_Pin, (!HAL_GPIO_ReadPin(GPIOB, LED1_Pin)) & 1);//set ON/OFF LED1
+
+		uint32_t now_tick = HAL_GetTick();
+		char stx[32];
+		sprintf(stx, "%lu.%03lu", now_tick / 1000, now_tick % 1000);
+		ssd1306_text_xy(stx, calcx(strlen(stx)), 2);//send string to Screen
+	}
+	//---------------------------------------------------------------------
 }
 
 //------------------------------------------------------------------------------------------
@@ -315,32 +331,10 @@ int main(void)
     uint32_t wait_sensor = get_tmr(2250);//set wait time to 1 sec.
 #endif
 
-    GPIO_PinState DataToPin = GPIO_PIN_RESET;
-    HAL_GPIO_WritePin(GPIOB, LED1_Pin, DataToPin);//LED ON
-
-    uint32_t now_tick;
-    uint32_t wait_tick  = get_tmr(wait_tick_def);//set wait time to 1 sec.
 
     //----------------------     MAIN LOOP    -----------------------------------
 
     while (1) {
-
-    	//------------------------------------------------------------------------
-    	if (check_tmr(wait_tick)) {
-    		DataToPin = (!DataToPin) & 1;
-    		HAL_GPIO_WritePin(GPIOB, LED1_Pin, DataToPin);//set ON/OFF LED1
-#ifdef DISPLAY
-    		if (i2cError == HAL_OK) {
-    			now_tick = HAL_GetTick();
-    			sprintf(toScreen, "%lu.%03lu", now_tick / 1000, now_tick % 1000);
-    			ssd1306_text_xy(toScreen, calcx(strlen(toScreen)), 2);//send string to screen
-    		}
-#endif
-    		wait_tick = get_tmr(wait_tick_def);//set wait time to 1 sec.
-    	}
-    	//------------------------------------------------------------------------
-
-    	HAL_Delay(50);
 
     	//------------------------------------------------------------------------
 #ifdef SET_BMP
