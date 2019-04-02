@@ -14,25 +14,37 @@ extern "C" {
 #include <time.h>
 #include <math.h>
 
-
 #include "stm32f1xx_hal.h"
 #include "stm32f1xx_hal_uart.h"
+//#include "stm32f1xx_hal_rtc.h"
 
 //----------------------------------------------------------------------------
 
-#define SET_UART
 #define DISPLAY
 #define SET_BMP
+#define SET_UART
+
+/*
+#include "stm32f1xx_hal_def.h"
+typedef enum
+{
+  HAL_OK       = 0x00U,
+  HAL_ERROR    = 0x01U,
+  HAL_BUSY     = 0x02U,
+  HAL_TIMEOUT  = 0x03U
+} HAL_StatusTypeDef;
+*/
 
 #define wait_tick_def 1000
 #ifdef SET_BMP
-	#define wait_sensor_def 5000
+	#define wait_sensor_def 5
 #endif
+
 
 //LEDs
 #define LED1_Pin GPIO_PIN_0
 #define LED1_GPIO_Port GPIOB
-#define LED2_Pin GPIO_PIN_1
+#define LED2_Pin GPIO_PIN_12//1
 #define LED2_GPIO_Port GPIOB
 #define LED_ERROR LED2_Pin
 //I2C
@@ -40,23 +52,13 @@ extern "C" {
 #define SCL_GPIO_Port GPIOB
 #define SDA_Pin GPIO_PIN_11
 #define SDA_GPIO_Port GPIOB
-//UART1
-#define TXD_Pin GPIO_PIN_9
-#define TXD_GPIO_Port GPIOA
-#define RXD_Pin GPIO_PIN_10
-#define RXD_GPIO_Port GPIOA
 
-#ifndef HAL_OK
-	#define HAL_OK      0
-#endif
-#ifndef HAL_ERROR
-	#define HAL_ERROR   1
-#endif
-#ifndef HAL_BUSY
-	#define HAL_BUSY    2
-#endif
-#ifndef HAL_TIMEOUT
-	#define HAL_TIMEOUT 3
+#ifdef SET_UART
+	//UART1
+	#define TXD_Pin GPIO_PIN_9
+	#define TXD_GPIO_Port GPIOA
+	#define RXD_Pin GPIO_PIN_10
+	#define RXD_GPIO_Port GPIOA
 #endif
 
 //----------------------------------------------------------------------------
@@ -71,21 +73,21 @@ extern "C" {
 
 //----------------------------------------------------------------------------
 
-extern I2C_HandleTypeDef hi2c2;
-extern HAL_StatusTypeDef i2cError;
-extern UART_HandleTypeDef huart1;
+I2C_HandleTypeDef hi2c2;
+HAL_StatusTypeDef i2cError;
+UART_HandleTypeDef huart1;
 
-extern result_t sensors;
+result_t sensors;
 
-extern uint32_t min_wait_ms;
-extern uint32_t max_wait_ms;
+const uint32_t min_wait_ms;
+const uint32_t max_wait_ms;
 
 //----------------------------------------------------------------------------
 
-extern uint32_t get_tmr(uint32_t msec);
-extern bool check_tmr(uint32_t msec);
-extern void Report(char *txt, uint16_t len, bool addCRLF, bool addTime);
-extern void errLedOn(const char *from);
+uint32_t get_tmr(uint32_t sec);
+bool check_tmr(uint32_t sec);
+void Report(const char *txt, bool addCRLF, bool addTime);
+void errLedOn(const char *from);
 
 
 void Error_Handler(void);

@@ -3,7 +3,9 @@
 
 //-----------------------------------------------------------------------------
 
-const char *ver = "ver. 0.1";
+//const char *ver = "ver. 0.1";
+//const char *ver = "ver. 1.1";//02.04.2019
+const char *ver = "ver. 1.2";//02.04.2019
 
 I2C_HandleTypeDef hi2c2;
 HAL_StatusTypeDef i2cError = HAL_OK;
@@ -12,10 +14,13 @@ RTC_HandleTypeDef hrtc;
 
 UART_HandleTypeDef huart1;
 
-uint32_t min_wait_ms = 350;
-uint32_t max_wait_ms = 1000;
+const uint32_t min_wait_ms = 350;
+const uint32_t max_wait_ms = 1000;
 
 result_t sensors = {0.0, 0.0, 0.0};
+
+static uint32_t msCounter = wait_tick_def;
+static uint32_t secCounter = 0;
 
 //-----------------------------------------------------------------------------
 
@@ -36,6 +41,36 @@ void assert_failed(uint8_t *file, uint32_t line)
 }
 #endif /* USE_FULL_ASSERT */
 
+
+//-----------------------------------------------------------------------------
+
+int sec_to_str_time(uint32_t sec, char *stx)
+{
+long day, min, hour, seconda;
+
+	day = sec / (60 * 60 * 24);
+	sec = sec % (60 * 60 * 24);
+
+    hour = sec / (60 * 60);
+    sec = sec % (60 * 60);
+
+    min = sec / (60);
+    sec = sec % 60;
+
+    seconda = sec;
+
+    return (sprintf(stx, "%lu.%02lu:%02lu:%02lu", day, hour, min, seconda));
+}
+
+//-----------------------------------------------------------------------------
+uint32_t get_secCounter()
+{
+	return (secCounter);
+}
+void inc_secCounter()
+{
+	secCounter++;
+}
 //-----------------------------------------------------------------------------
 
 /**
@@ -48,10 +83,25 @@ void assert_failed(uint8_t *file, uint32_t line)
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if (htim->Instance == TIM4) HAL_IncTick();
+	if (htim->Instance == TIM4) {
+		HAL_IncTick();
+		//-------------   LED ON/OFF and show tickCounter to Screen   -----------
+		if (msCounter) msCounter--;
+		if (!msCounter) {
+			inc_secCounter();
+			msCounter = wait_tick_def;
+			HAL_GPIO_WritePin(GPIOB, LED1_Pin, (!HAL_GPIO_ReadPin(GPIOB, LED1_Pin)) & 1);//set ON/OFF LED1
+/**/
+			char buf[32];
+			ssd1306_text_xy(buf, ssd1306_calcx(sec_to_str_time(get_secCounter(), buf)), 2);//send string to Screen
+/**/
+		}
+		//---------------------------------------------------------------------
+	}
 }
 
 //------------------------------------------------------------------------------------------
+
 
 /**
   * @brief  This function is executed in case of error occurrence.
@@ -172,7 +222,7 @@ static void MX_USART1_Init(void)
 {
 
   huart1.Instance          = USART1;
-  huart1.Init.BaudRate     = 57600;//115200;
+  huart1.Init.BaudRate     = 115200;
   huart1.Init.WordLength   = UART_WORDLENGTH_8B;
   huart1.Init.StopBits     = UART_STOPBITS_1;
   huart1.Init.Parity       = UART_PARITY_NONE;
@@ -189,35 +239,29 @@ static void MX_USART1_Init(void)
 //     len - total bytes for sending
 //     addCRLF - flag append or not "\r\n" to data before sending
 //     addTime - flag insert or not TickCount before data
-void Report(char *txt, uint16_t len, bool addCRLF, bool addTime)
+void Report(const char *txt, bool addCRLF, bool addTime)
 {
-
-#ifdef SET_UART
 
 	if (!txt)  return;
 
-	uint16_t dlen = len;
-	if (addCRLF) dlen += 2;
-	if (addTime) dlen += 16;
-
-	char *buf = (char *)calloc(1, dlen + 1);//get buffer for data in heap memory
+	uint16_t len = strlen(txt);
+	if (addCRLF) len += 2;
+	if (addTime) len += 16;
+	if (len > 255) len = 255;
+	char *buf = (char *)calloc(1, len + 1);//get buffer for data in heap memory
 	if (!buf) return;
 
-	//create buffer with data for sending to UART1
-	dlen = 0;
-	if (addTime) {
-		dlen = sprintf(buf, "[%06lu.%03lu] | ", HAL_GetTick()/1000, HAL_GetTick() % 1000);
-	}
-	dlen += sprintf(buf+strlen(buf), "%s", txt);
-	if (addCRLF) {
-		dlen += sprintf(buf+strlen(buf), "\r\n");
-	}
-	// now send data
-	if (HAL_UART_Transmit(&huart1, (uint8_t *)buf, dlen, max_wait_ms) != HAL_OK) errLedOn(NULL);
+	//create buffer with data for sending to UART1 and USB
+	if (addTime) sprintf(buf, "[%08lu] | ", get_secCounter());
+	strcat(buf, txt);
+	if (addCRLF) strcat(buf, "\r\n");
+	len = strlen(buf);
+#ifdef SET_UART
+	// send data to UART1
+	if (HAL_UART_Transmit(&huart1, (uint8_t *)buf, len, max_wait_ms) != HAL_OK) errLedOn(NULL);
+#endif
 
 	free(buf);//release buffer's memory
-
-#endif
 
 }
 
@@ -234,23 +278,23 @@ void errLedOn(const char *from)
 
 	if (from) {
 		char stx[128];
-		uint16_t len = sprintf(stx,"Error in %s function\r\n", from);
-		Report(stx, len, false, true);
+		sprintf(stx,"Error in %s function\r\n", from);
+		Report(stx, false, true);
 	}
 }
 
 //-----------------------------------------------------------------------------
 
-uint32_t get_tmr(uint32_t msec)
+uint32_t get_tmr(uint32_t sec)
 {
-	return (HAL_GetTick() + msec);
+	return (get_secCounter() + sec);
 }
 
 //----------------------------------------------------------------------------------------
 
-bool check_tmr(uint32_t msec)
+bool check_tmr(uint32_t sec)
 {
-	return (HAL_GetTick() >= msec ? true : false);
+	return (get_secCounter() >= sec ? true : false);
 }
 
 //******************************************************************************
@@ -270,9 +314,10 @@ int main(void)
     HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
     MX_RTC_Init();
     MX_I2C2_Init();
+#ifdef SET_UART
     MX_USART1_Init();
+#endif
 
-    uint16_t len;
     char stx[256] = {0};
     char toScreen[128] = {0};
 
@@ -283,12 +328,12 @@ int main(void)
     	if (!i2cError) ssd1306_pattern();//set any params for screen
     }
 
-    len = sprintf(stx, "Start main %s", ver);
+    sprintf(stx, "Start main %s", ver);
     if (!i2cError) {
     	ssd1306_invert();//set inverse color mode
     	if (!i2cError) ssd1306_clear();//clear screen
     }
-    Report(stx, len, true, true);//send data to UART1
+    Report(stx, true, true);//send data to UART1
 #endif
 
 #ifdef SET_BMP
@@ -303,35 +348,12 @@ int main(void)
     int32_t temp, pres, humi = 0;
     char sensorType[64] = {0};
 
-    uint32_t wait_sensor = get_tmr(2250);//set wait time to 1 sec.
+    uint32_t wait_sensor = get_tmr(wait_sensor_def);//set wait time to 1 sec.
 #endif
-
-    GPIO_PinState DataToPin = GPIO_PIN_RESET;
-    HAL_GPIO_WritePin(GPIOB, LED1_Pin, DataToPin);//LED ON
-
-    uint32_t now_tick;
-    uint32_t wait_tick  = get_tmr(wait_tick_def);//set wait time to 1 sec.
 
     //----------------------     MAIN LOOP    -----------------------------------
 
     while (1) {
-
-    	//------------------------------------------------------------------------
-    	if (check_tmr(wait_tick)) {
-    		DataToPin = (!DataToPin) & 1;
-    		HAL_GPIO_WritePin(GPIOB, LED1_Pin, DataToPin);//set ON/OFF LED1
-#ifdef DISPLAY
-    		if (i2cError == HAL_OK) {
-    			now_tick = HAL_GetTick();
-    			sprintf(toScreen, "%lu.%03lu", now_tick / 1000, now_tick % 1000);
-    			ssd1306_text_xy(toScreen, calcx(strlen(toScreen)), 2);//send string to screen
-    		}
-#endif
-    		wait_tick = get_tmr(wait_tick_def);//set wait time to 1 sec.
-    	}
-    	//------------------------------------------------------------------------
-
-    	HAL_Delay(50);
 
     	//------------------------------------------------------------------------
 #ifdef SET_BMP
@@ -340,44 +362,43 @@ int main(void)
     		//
     		if (i2c_master_reset_sensor(&reg_id) != HAL_OK) continue;
     		sprintf(stx,"ADDR=0x%02X ", BMP280_ADDR);
-    		memset(sensorType, 0, sizeof(sensorType));
+    		sensorType[0] = 0;
     		switch (reg_id) {
-    			case BMP280_SENSOR : sprintf(sensorType,"BMP280"); d_size = 6; break;
-    			case BME280_SENSOR : sprintf(sensorType,"BME280"); d_size = 8; break;
-    				default : sprintf(sensorType,"Unknown chip");
+    			case BMP280_SENSOR : strcpy(sensorType,"BMP280"); d_size = 6; break;
+    			case BME280_SENSOR : strcpy(sensorType,"BME280"); d_size = 8; break;
+    				default : strcpy(sensorType,"Unknown chip");
     		}
     		sprintf(stx+strlen(stx),"(%s)", sensorType);
     		if (i2c_master_test_sensor(&reg_stat, &reg_mode, &reg_conf, reg_id) != HAL_OK) {
     			sprintf(stx+strlen(stx)," No ack...try again. (reg_id=0x%02x)\r\n", reg_id);
-    			len = strlen(stx);
-    			Report(stx, len, false, true);//send data to UART1
+    			Report(stx, false, true);//send data to UART1
     			continue;
     		}
     		reg_stat &= 0x0f;
     		memset(data_rdx, 0, DATA_LENGTH);
     		if (i2c_master_read_sensor(BMP280_REG_PRESSURE, &data_rdx[0], d_size) == HAL_OK) {
-    			if (readCalibrationData(reg_id) != HAL_OK) {
+    			if (bmp280_readCalibrationData(reg_id) != HAL_OK) {
     				sprintf(stx+strlen(stx)," Reading Calibration Data ERROR\r\n");
     			} else {
     				pres = temp = 0;
     				pres = (data_rdx[0] << 12) | (data_rdx[1] << 4) | (data_rdx[2] >> 4);
     				temp = (data_rdx[3] << 12) | (data_rdx[4] << 4) | (data_rdx[5] >> 4);
     				if (reg_id == BME280_SENSOR) humi = (data_rdx[6] << 8) | data_rdx[7];
-    				CalcAll(&sensors, reg_id, temp, pres, humi);
+    				bmp280_CalcAll(&sensors, reg_id, temp, pres, humi);
     				sprintf(stx+strlen(stx)," Press=%.2f mmHg, Temp=%.2f DegC", sensors.pres, sensors.temp);
-    				if (reg_id == BME280_SENSOR) sprintf(stx+strlen(stx)," Humidity=%.2f %crH", sensors.humi, 0x25);
-    				sprintf(stx+strlen(stx),"\r\n");
+    				if (reg_id == BME280_SENSOR) sprintf(stx+strlen(stx)," Humidity=%.2f %%rH", sensors.humi);
+    				strcat(stx,"\r\n");
 #ifdef DISPLAY
     				if (i2cError == HAL_OK) {
-    					col = calcx(strlen(sensorType));
+    					col = ssd1306_calcx(strlen(sensorType));
     					sprintf(toScreen, "%s\n\nmmHg : %.2f\nDegC : %.2f", sensorType, sensors.pres, sensors.temp);
-    					if (reg_id == BME280_SENSOR) sprintf(toScreen+strlen(toScreen),"\nHumi:%.2f %crH", sensors.humi, 0x25);
+    					if (reg_id == BME280_SENSOR) sprintf(toScreen+strlen(toScreen),"\nHumi:%.2f %%rH", sensors.humi);
     					ssd1306_text_xy(toScreen, col, 4);//send string to screen
     				}
 #endif
     			}
-    		} else len = sprintf(stx+strlen(stx),"Read sensor error\r\n");
-    		Report(stx, len, false, true);//send data to UART1
+    		} else strcat(stx,"Read sensor error\r\n");
+    		Report(stx, false, true);//send data to UART1
     		//
     	}
 #endif
@@ -385,6 +406,8 @@ int main(void)
     }//end of while(1)
 
 }//end of main
+
+
 
 //****************************************************************************************
 //****************************************************************************************

@@ -7,7 +7,7 @@
 uint8_t invert = OLED_CMD_DISPLAY_NORMAL;
 
 // font table
-uint8_t font8x8[128][8] = {
+const uint8_t font8x8[128][8] = {
     { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },   // U+0000 (nul)
     { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },   // U+0001
     { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },   // U+0002
@@ -227,7 +227,7 @@ uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_STREAM, OLED_CMD_SET_CONTRAST, value};
     if ((i2cError = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms)) != HAL_OK) errLedOn(__func__);
 }
 //-----------------------------------------------------------------------------------------
-uint8_t calcx(int len)
+uint8_t ssd1306_calcx(int len)
 {
 uint8_t ret = 0;
 
@@ -236,7 +236,7 @@ uint8_t ret = 0;
     return ret;
 }
 //-----------------------------------------------------------------------------------------
-void ssd1306_text_xy(char *stroka, uint8_t cx, uint8_t cy)
+void ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy)
 {
 HAL_StatusTypeDef rt = HAL_OK;
 uint8_t i, lin = cy - 1, col = cx - 1;
@@ -276,7 +276,7 @@ uint8_t first[] = {
 
 }
 //-----------------------------------------------------------------------------------------
-void ssd1306_text(char *stroka)
+void ssd1306_text(const char *stroka)
 {
 	if (stroka) {
 		if (!i2cError) {
