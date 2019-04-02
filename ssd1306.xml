@@ -9,7 +9,7 @@
 <!ATTLIST board id CDATA #REQUIRED>
 ]>
 <targetDefinitions>
-  <board id="ssd1306">
+  <board id="ssd1306plus">
     <name>ssd1306</name>
     <dbgIF>SWD</dbgIF>
     <dbgDEV>ST-Link</dbgDEV>

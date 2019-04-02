@@ -1,4 +1,4 @@
-Configuration	ssd1306
+Configuration	ssd1306plus
 STM32CubeMX 	5.1.0
 Date	03/31/2019
 MCU	STM32F103C8Tx
@@ -79,8 +79,8 @@ Pin Nb	PINs	FUNCTIONs	LABELs
 SOFTWARE PROJECT
 
 Project Settings : 
-Project Name : ssd1306
-Project Folder : /home/alarm/Project/STM32/ssd1306
+Project Name : ssd1306plus
+Project Folder : /home/alarm/Project/STM32/TEST/withUSB/ssd1306plus
 Toolchain / IDE : SW4STM32
 Firmware Package Name and Version : STM32Cube FW_F1 V1.7.0
 

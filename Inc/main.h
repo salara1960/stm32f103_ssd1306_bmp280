@@ -83,8 +83,8 @@ const uint32_t max_wait_ms;
 
 //----------------------------------------------------------------------------
 
-uint32_t get_tmr(uint32_t msec);
-bool check_tmr(uint32_t msec);
+uint32_t get_tmr(uint32_t sec);
+bool check_tmr(uint32_t sec);
 void Report(const char *txt, bool addCRLF, bool addTime);
 void errLedOn(const char *from);
 

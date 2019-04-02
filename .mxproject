@@ -1,7 +1,7 @@
 [PreviousGenFiles]
-HeaderPath=/home/alarm/Project/STM32/ssd1306/Inc
+HeaderPath=/home/alarm/Project/STM32/TEST/withUSB/ssd1306plus/Inc
 HeaderFiles=usb_device.h;usbd_conf.h;usbd_desc.h;usbd_cdc_if.h;stm32f1xx_it.h;stm32f1xx_hal_conf.h;main.h;
-SourcePath=/home/alarm/Project/STM32/ssd1306/Src
+SourcePath=/home/alarm/Project/STM32/TEST/withUSB/ssd1306plus/Src
 SourceFiles=usb_device.c;usbd_conf.c;usbd_desc.c;usbd_cdc_if.c;stm32f1xx_it.c;stm32f1xx_hal_msp.c;stm32f1xx_hal_timebase_tim.c;main.c;
 
 [PreviousLibFiles]

@@ -8,7 +8,8 @@
 //const char *ver = "ver. 0.1";
 //const char *ver = "ver. 0.2";//with Usb device for Virtual Com Port
 //const char *ver = "ver. 0.3";//used pin PB12 like LED_ERROR (user's red led on board)
-const char *ver = "ver. 0.3.1";//add msCounter to callback function when TIM4 to interrupt
+//const char *ver = "ver. 0.3.1";//add msCounter to callback function when TIM4 to interrupt
+const char *ver = "ver. 0.3.2";//02.04.2019
 
 I2C_HandleTypeDef hi2c2;
 HAL_StatusTypeDef i2cError = HAL_OK;
@@ -22,8 +23,9 @@ const uint32_t max_wait_ms = 1000;
 
 result_t sensors = {0.0, 0.0, 0.0};
 
-static uint16_t msCounter = wait_tick_def;
-const uint32_t max_uint32 = 0xffffffff;
+static uint32_t msCounter = wait_tick_def;
+static uint32_t secCounter = 0;
+
 //-----------------------------------------------------------------------------
 
 #ifdef  USE_FULL_ASSERT
@@ -45,9 +47,9 @@ void assert_failed(uint8_t *file, uint32_t line)
 
 //-----------------------------------------------------------------------------
 
-void sec_to_str_time(uint32_t sec, char *stx)
+int sec_to_str_time(uint32_t sec, char *stx)
 {
-long day = 0, min = 0, hour = 0, seconda = 0;
+long day, min, hour, seconda;
 
     day = sec / (60 * 60 * 24);
     sec = sec % (60 * 60 * 24);
@@ -60,32 +62,18 @@ long day = 0, min = 0, hour = 0, seconda = 0;
 
     seconda = sec;
 
-    sprintf(stx, "%lu.%02lu:%02lu:%02lu", day, hour, min, seconda);
-
+    return (sprintf(stx, "%lu.%02lu:%02lu:%02lu", day, hour, min, seconda));
 }
 
 //-----------------------------------------------------------------------------
 
-static uint32_t ReadTimeCounter(RTC_HandleTypeDef *hrtc)
+uint32_t get_secCounter()
 {
-  uint16_t high1 = 0U, high2 = 0U, low = 0U;
-  uint32_t timecounter = 0U;
-
-  high1 = READ_REG(hrtc->Instance->CNTH & RTC_CNTH_RTC_CNT);
-  low   = READ_REG(hrtc->Instance->CNTL & RTC_CNTL_RTC_CNT);
-  high2 = READ_REG(hrtc->Instance->CNTH & RTC_CNTH_RTC_CNT);
-
-  if (high1 != high2) {
-	  /* In this case the counter roll over during reading of CNTL and CNTH registers,
-       read again CNTL register then return the counter value */
-	  timecounter = (((uint32_t) high2 << 16U) | READ_REG(hrtc->Instance->CNTL & RTC_CNTL_RTC_CNT));
-  } else {
-	  /* No counter roll over during reading of CNTL and CNTH registers, counter
-       value is equal to first value of CNTL and CNTH */
-	  timecounter = (((uint32_t) high1 << 16U) | low);
-  }
-
-  return timecounter;
+    return (secCounter);
+}
+void inc_secCounter()
+{
+    secCounter++;
 }
 
 //-----------------------------------------------------------------------------
@@ -100,22 +88,21 @@ static uint32_t ReadTimeCounter(RTC_HandleTypeDef *hrtc)
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if (htim->Instance == TIM4) {
-		HAL_IncTick();
-		//-------------   LED ON/OFF and show tickCounter to Screen   -----------
-		if (msCounter) msCounter--;
-		if (!msCounter) {
-			msCounter = wait_tick_def;
-			HAL_GPIO_WritePin(GPIOB, LED1_Pin, (!HAL_GPIO_ReadPin(GPIOB, LED1_Pin)) & 1);//set ON/OFF LED1
-
-			char buf[32];
-			uint32_t sec = ReadTimeCounter(&hrtc);//HAL_GetTick();
-			sec_to_str_time(sec, buf);
-			//sprintf(buf, "%lu.%03lu", ms / 1000, ms % 1000);
-			ssd1306_text_xy(buf, ssd1306_calcx(strlen(buf)), 2);//send string to Screen
-		}
-		//---------------------------------------------------------------------
+    if (htim->Instance == TIM4) {
+	HAL_IncTick();
+	//-------------   LED ON/OFF and show tickCounter to Screen   -----------
+	if (msCounter) msCounter--;
+	if (!msCounter) {
+	    inc_secCounter();
+	    msCounter = wait_tick_def;
+	    HAL_GPIO_WritePin(GPIOB, LED1_Pin, (!HAL_GPIO_ReadPin(GPIOB, LED1_Pin)) & 1);//set ON/OFF LED1
+/**/
+	    char buf[32];
+	    ssd1306_text_xy(buf, ssd1306_calcx(sec_to_str_time(get_secCounter(), buf)), 2);//send string to Screen
+/**/
 	}
+	//---------------------------------------------------------------------
+    }
 }
 
 //------------------------------------------------------------------------------------------
@@ -268,7 +255,7 @@ void Report(const char *txt, bool addCRLF, bool addTime)
 	if (!buf) return;
 
 	//create buffer with data for sending to UART1 and USB
-	if (addTime) sprintf(buf, "[%08lu] | ", ReadTimeCounter(&hrtc));//HAL_GetTick()/1000, HAL_GetTick() % 1000);
+	if (addTime) sprintf(buf, "[%08lu] | ", get_secCounter());
 	strcat(buf, txt);
 	if (addCRLF) strcat(buf, "\r\n");
 	len = strlen(buf);
@@ -289,31 +276,31 @@ void Report(const char *txt, bool addCRLF, bool addTime)
 //     from - name of function where error location
 void errLedOn(const char *from)
 {
-	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
-	HAL_Delay(100);
-	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_SET);//LED OFF
-	HAL_Delay(200);
-	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
+    HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
+    HAL_Delay(100);
+    HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_SET);//LED OFF
+    HAL_Delay(200);
+    HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
 
-	if (from) {
-		char stx[128];
-		sprintf(stx,"Error in %s function\r\n", from);
-		Report(stx, false, true);
-	}
+    if (from) {
+    	char stx[128];
+    	sprintf(stx,"Error in %s function\r\n", from);
+    	Report(stx, false, true);
+    }
 }
 
 //-----------------------------------------------------------------------------
 
 uint32_t get_tmr(uint32_t sec)
 {
-	return (ReadTimeCounter(&hrtc) + sec);
+    return (get_secCounter() + sec);
 }
 
 //----------------------------------------------------------------------------------------
 
 bool check_tmr(uint32_t sec)
 {
-	return (ReadTimeCounter(&hrtc) >= sec ? true : false);
+    return (get_secCounter() >= sec ? true : false);
 }
 
 //******************************************************************************
@@ -338,7 +325,6 @@ int main(void)
 #endif
     MX_USB_DEVICE_Init();
 
-//    uint16_t len;
     char stx[256] = {0};
     char toScreen[128] = {0};
 
@@ -369,7 +355,7 @@ int main(void)
     int32_t temp, pres, humi = 0;
     char sensorType[64] = {0};
 
-    uint32_t wait_sensor = get_tmr(2);//set wait time to 1 sec.
+    uint32_t wait_sensor = get_tmr(wait_sensor_def);//set wait time to 1 sec.
 #endif
 
 
@@ -424,6 +410,7 @@ int main(void)
     		//
     	}
 #endif
+
     	//------------------------------------------------------------------------
     }//end of while(1)
 
