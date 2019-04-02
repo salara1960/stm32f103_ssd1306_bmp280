@@ -73,7 +73,7 @@ HAL_StatusTypeDef i2c_master_test_sensor(uint8_t *stat, uint8_t *mode, uint8_t *
     return rt;
 }
 //-----------------------------------------------------------------------------
-HAL_StatusTypeDef readCalibrationData(uint8_t chip_id)
+HAL_StatusTypeDef bmp280_readCalibrationData(uint8_t chip_id)
 {
 HAL_StatusTypeDef err = HAL_ERROR;
 uint8_t data[24] = {0};
@@ -117,7 +117,7 @@ outm:
     return err;
 }
 //-----------------------------------------------------------------------------
-void CalcAll(result_t *ssen, int32_t chip_id, int32_t tp, int32_t pp, int32_t hh)
+void bmp280_CalcAll(result_t *ssen, int32_t chip_id, int32_t tp, int32_t pp, int32_t hh)
 {
 double var1, var2, p, var_H;
 double t1, p1, h1 = 0.0;

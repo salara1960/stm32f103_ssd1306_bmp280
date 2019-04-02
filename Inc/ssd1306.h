@@ -47,21 +47,21 @@
 
 //------------------------------------------------------------------------
 
-extern uint32_t min_wait_ms;
-extern uint32_t max_wait_ms;
+//extern const uint32_t min_wait_ms;
+//extern const uint32_t max_wait_ms;
 
 //------------------------------------------------------------------------
 
-extern void errLedOn(const char *from);
-extern void ssd1306_on(bool flag);
-extern void ssd1306_init();
-extern void ssd1306_invert();
-extern void ssd1306_clear();
-extern void ssd1306_pattern();
-extern void ssd1306_contrast(uint8_t value);
-extern uint8_t calcx(int len);
-extern void ssd1306_text_xy(char *stroka, uint8_t cx, uint8_t cy);
-extern void ssd1306_text(char *stroka);
+void errLedOn(const char *from);
+void ssd1306_on(bool flag);
+void ssd1306_init();
+void ssd1306_invert();
+void ssd1306_clear();
+void ssd1306_pattern();
+void ssd1306_contrast(uint8_t value);
+uint8_t ssd1306_calcx(int len);
+void ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy);
+void ssd1306_text(const char *stroka);
 
 //------------------------------------------------------------------------
 

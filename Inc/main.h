@@ -32,7 +32,7 @@ typedef enum
   HAL_BUSY     = 0x02U,
   HAL_TIMEOUT  = 0x03U
 } HAL_StatusTypeDef;
-*/
+
 
 #ifndef HAL_OK
 	#define HAL_OK      0x00U
@@ -47,6 +47,7 @@ typedef enum
 	#define HAL_TIMEOUT 0x03U
 #endif
 
+*/
 
 #define wait_tick_def 1000
 #ifdef SET_BMP
@@ -92,14 +93,14 @@ extern UART_HandleTypeDef huart1;
 
 extern result_t sensors;
 
-extern uint32_t min_wait_ms;
-extern uint32_t max_wait_ms;
+extern const uint32_t min_wait_ms;
+extern const uint32_t max_wait_ms;
 
 //----------------------------------------------------------------------------
 
 extern uint32_t get_tmr(uint32_t msec);
 extern bool check_tmr(uint32_t msec);
-extern void Report(char *txt, uint16_t len, bool addCRLF, bool addTime);
+extern void Report(const char *txt, bool addCRLF, bool addTime);
 extern void errLedOn(const char *from);
 
 

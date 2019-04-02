@@ -17,8 +17,8 @@ RTC_HandleTypeDef hrtc;
 
 UART_HandleTypeDef huart1;
 
-uint32_t min_wait_ms = 350;
-uint32_t max_wait_ms = 1000;
+const uint32_t min_wait_ms = 350;
+const uint32_t max_wait_ms = 1000;
 
 result_t sensors = {0.0, 0.0, 0.0};
 
@@ -66,7 +66,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 		uint32_t now_tick = HAL_GetTick();
 		char stx[32];
 		sprintf(stx, "%lu.%03lu", now_tick / 1000, now_tick % 1000);
-		ssd1306_text_xy(stx, calcx(strlen(stx)), 2);//send string to Screen
+		ssd1306_text_xy(stx, ssd1306_calcx(strlen(stx)), 2);//send string to Screen
 	}
 	//---------------------------------------------------------------------
 }
@@ -208,36 +208,30 @@ static void MX_USART1_Init(void)
 //     len - total bytes for sending
 //     addCRLF - flag append or not "\r\n" to data before sending
 //     addTime - flag insert or not TickCount before data
-void Report(char *txt, uint16_t len, bool addCRLF, bool addTime)
+void Report(const char *txt, bool addCRLF, bool addTime)
 {
 
 	if (!txt)  return;
 
-	uint16_t dlen = len;
-	if (addCRLF) dlen += 2;
-	if (addTime) dlen += 16;
-
-	char *buf = (char *)calloc(1, dlen + 1);//get buffer for data in heap memory
+	uint16_t len = strlen(txt);
+	if (addCRLF) len += 2;
+	if (addTime) len += 16;
+	if (len > 255) len = 255;
+	char *buf = (char *)calloc(1, len + 1);//get buffer for data in heap memory
 	if (!buf) return;
 
 	//create buffer with data for sending to UART1 and USB
-	dlen = 0;
-	if (addTime) {
-		dlen = sprintf(buf, "[%06lu.%03lu] | ", HAL_GetTick()/1000, HAL_GetTick() % 1000);
-	}
-	dlen += sprintf(buf+strlen(buf), "%s", txt);
-	if (addCRLF) {
-		dlen += sprintf(buf+strlen(buf), "\r\n");
-	}
+	if (addTime) sprintf(buf, "[%06lu.%03lu] | ", HAL_GetTick()/1000, HAL_GetTick() % 1000);
+	strcat(buf, txt);
+	if (addCRLF) strcat(buf, "\r\n");
+	len = strlen(buf);
 #ifdef SET_UART
 	// send data to UART1
-	if (HAL_UART_Transmit(&huart1, (uint8_t *)buf, dlen, max_wait_ms) != HAL_OK) errLedOn(NULL);
+	if (HAL_UART_Transmit(&huart1, (uint8_t *)buf, len, max_wait_ms) != HAL_OK) errLedOn(NULL);
 #endif
 	// send data to CDC_virtual_serial_port
-	if (CDC_Transmit_FS((uint8_t *)buf, dlen) != USBD_OK)
-		errLedOn(NULL);
-	else
-		HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_SET);//LED OFF
+	if (CDC_Transmit_FS((uint8_t *)buf, len) != USBD_OK) errLedOn(NULL);
+	                                                 else HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_SET);//LED OFF
 
 	free(buf);//release buffer's memory
 
@@ -256,8 +250,8 @@ void errLedOn(const char *from)
 
 	if (from) {
 		char stx[128];
-		uint16_t len = sprintf(stx,"Error in %s function\r\n", from);
-		Report(stx, len, false, true);
+		sprintf(stx,"Error in %s function\r\n", from);
+		Report(stx, false, true);
 	}
 }
 
@@ -297,7 +291,7 @@ int main(void)
 #endif
     MX_USB_DEVICE_Init();
 
-    uint16_t len;
+//    uint16_t len;
     char stx[256] = {0};
     char toScreen[128] = {0};
 
@@ -308,12 +302,12 @@ int main(void)
     	if (!i2cError) ssd1306_pattern();//set any params for screen
     }
 
-    len = sprintf(stx, "Start main %s", ver);
+    sprintf(stx, "Start main %s", ver);
     if (!i2cError) {
     	ssd1306_invert();//set inverse color mode
     	if (!i2cError) ssd1306_clear();//clear screen
     }
-    Report(stx, len, true, true);//send data to UART1
+    Report(stx, true, true);//send data to UART1
 #endif
 
 #ifdef SET_BMP
@@ -343,44 +337,43 @@ int main(void)
     		//
     		if (i2c_master_reset_sensor(&reg_id) != HAL_OK) continue;
     		sprintf(stx,"ADDR=0x%02X ", BMP280_ADDR);
-    		memset(sensorType, 0, sizeof(sensorType));
+    		sensorType[0] = 0;
     		switch (reg_id) {
-    			case BMP280_SENSOR : sprintf(sensorType,"BMP280"); d_size = 6; break;
-    			case BME280_SENSOR : sprintf(sensorType,"BME280"); d_size = 8; break;
-    				default : sprintf(sensorType,"Unknown chip");
+    			case BMP280_SENSOR : strcpy(sensorType,"BMP280"); d_size = 6; break;
+    			case BME280_SENSOR : strcpy(sensorType,"BME280"); d_size = 8; break;
+    				default : strcpy(sensorType,"Unknown chip");
     		}
     		sprintf(stx+strlen(stx),"(%s)", sensorType);
     		if (i2c_master_test_sensor(&reg_stat, &reg_mode, &reg_conf, reg_id) != HAL_OK) {
     			sprintf(stx+strlen(stx)," No ack...try again. (reg_id=0x%02x)\r\n", reg_id);
-    			len = strlen(stx);
-    			Report(stx, len, false, true);//send data to UART1
+    			Report(stx, false, true);//send data to UART1
     			continue;
     		}
     		reg_stat &= 0x0f;
     		memset(data_rdx, 0, DATA_LENGTH);
     		if (i2c_master_read_sensor(BMP280_REG_PRESSURE, &data_rdx[0], d_size) == HAL_OK) {
-    			if (readCalibrationData(reg_id) != HAL_OK) {
+    			if (bmp280_readCalibrationData(reg_id) != HAL_OK) {
     				sprintf(stx+strlen(stx)," Reading Calibration Data ERROR\r\n");
     			} else {
     				pres = temp = 0;
     				pres = (data_rdx[0] << 12) | (data_rdx[1] << 4) | (data_rdx[2] >> 4);
     				temp = (data_rdx[3] << 12) | (data_rdx[4] << 4) | (data_rdx[5] >> 4);
     				if (reg_id == BME280_SENSOR) humi = (data_rdx[6] << 8) | data_rdx[7];
-    				CalcAll(&sensors, reg_id, temp, pres, humi);
+    				bmp280_CalcAll(&sensors, reg_id, temp, pres, humi);
     				sprintf(stx+strlen(stx)," Press=%.2f mmHg, Temp=%.2f DegC", sensors.pres, sensors.temp);
-    				if (reg_id == BME280_SENSOR) sprintf(stx+strlen(stx)," Humidity=%.2f %crH", sensors.humi, 0x25);
-    				sprintf(stx+strlen(stx),"\r\n");
+    				if (reg_id == BME280_SENSOR) sprintf(stx+strlen(stx)," Humidity=%.2f %%rH", sensors.humi);
+    				strcat(stx,"\r\n");
 #ifdef DISPLAY
     				if (i2cError == HAL_OK) {
-    					col = calcx(strlen(sensorType));
+    					col = ssd1306_calcx(strlen(sensorType));
     					sprintf(toScreen, "%s\n\nmmHg : %.2f\nDegC : %.2f", sensorType, sensors.pres, sensors.temp);
-    					if (reg_id == BME280_SENSOR) sprintf(toScreen+strlen(toScreen),"\nHumi:%.2f %crH", sensors.humi, 0x25);
+    					if (reg_id == BME280_SENSOR) sprintf(toScreen+strlen(toScreen),"\nHumi:%.2f %%rH", sensors.humi);
     					ssd1306_text_xy(toScreen, col, 4);//send string to screen
     				}
 #endif
     			}
-    		} else len = sprintf(stx+strlen(stx),"Read sensor error\r\n");
-    		Report(stx, len, false, true);//send data to UART1
+    		} else strcat(stx,"Read sensor error\r\n");
+    		Report(stx, false, true);//send data to UART1
     		//
     	}
 #endif
