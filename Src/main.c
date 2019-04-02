@@ -45,6 +45,27 @@ void assert_failed(uint8_t *file, uint32_t line)
 
 //-----------------------------------------------------------------------------
 
+void sec_to_str_time(uint32_t sec, char *stx)
+{
+long day = 0, min = 0, hour = 0, seconda = 0;
+
+    day = sec / (60 * 60 * 24);
+    sec = sec % (60 * 60 * 24);
+
+    hour = sec / (60 * 60);
+    sec = sec % (60 * 60);
+
+    min = sec / (60);
+    sec = sec % 60;
+
+    seconda = sec;
+
+    sprintf(stx, "%lu.%02lu:%02lu:%02lu", day, hour, min, seconda);
+
+}
+
+//-----------------------------------------------------------------------------
+
 /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM4 interrupt took place, inside
@@ -55,20 +76,22 @@ void assert_failed(uint8_t *file, uint32_t line)
   */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if (htim->Instance == TIM4) HAL_IncTick();
+	if (htim->Instance == TIM4) {
+		HAL_IncTick();
+		//-------------   LED ON/OFF and show tickCounter to Screen   -----------
+		if (msCounter) msCounter--;
+		if (!msCounter) {
+			msCounter = wait_tick_def;
+			HAL_GPIO_WritePin(GPIOB, LED1_Pin, (!HAL_GPIO_ReadPin(GPIOB, LED1_Pin)) & 1);//set ON/OFF LED1
 
-	//-------------   LED ON/OFF and show tickCounter to Screen   -----------
-	if (msCounter) msCounter--;
-	if (!msCounter) {
-		msCounter = wait_tick_def;
-		HAL_GPIO_WritePin(GPIOB, LED1_Pin, (!HAL_GPIO_ReadPin(GPIOB, LED1_Pin)) & 1);//set ON/OFF LED1
-
-		uint32_t now_tick = HAL_GetTick();
-		char stx[32];
-		sprintf(stx, "%lu.%03lu", now_tick / 1000, now_tick % 1000);
-		ssd1306_text_xy(stx, ssd1306_calcx(strlen(stx)), 2);//send string to Screen
+			char buf[32];
+			uint32_t sec = HAL_GetTick();
+			sec_to_str_time(sec / 1000, buf);
+			//sprintf(buf, "%lu.%03lu", ms / 1000, ms % 1000);
+			ssd1306_text_xy(buf, ssd1306_calcx(strlen(buf)), 2);//send string to Screen
+		}
+		//---------------------------------------------------------------------
 	}
-	//---------------------------------------------------------------------
 }
 
 //------------------------------------------------------------------------------------------
