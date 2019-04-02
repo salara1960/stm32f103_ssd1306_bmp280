@@ -23,7 +23,7 @@ const uint32_t max_wait_ms = 1000;
 result_t sensors = {0.0, 0.0, 0.0};
 
 static uint16_t msCounter = wait_tick_def;
-
+const uint32_t max_uint32 = 0xffffffff;
 //-----------------------------------------------------------------------------
 
 #ifdef  USE_FULL_ASSERT
@@ -66,6 +66,30 @@ long day = 0, min = 0, hour = 0, seconda = 0;
 
 //-----------------------------------------------------------------------------
 
+static uint32_t ReadTimeCounter(RTC_HandleTypeDef *hrtc)
+{
+  uint16_t high1 = 0U, high2 = 0U, low = 0U;
+  uint32_t timecounter = 0U;
+
+  high1 = READ_REG(hrtc->Instance->CNTH & RTC_CNTH_RTC_CNT);
+  low   = READ_REG(hrtc->Instance->CNTL & RTC_CNTL_RTC_CNT);
+  high2 = READ_REG(hrtc->Instance->CNTH & RTC_CNTH_RTC_CNT);
+
+  if (high1 != high2) {
+	  /* In this case the counter roll over during reading of CNTL and CNTH registers,
+       read again CNTL register then return the counter value */
+	  timecounter = (((uint32_t) high2 << 16U) | READ_REG(hrtc->Instance->CNTL & RTC_CNTL_RTC_CNT));
+  } else {
+	  /* No counter roll over during reading of CNTL and CNTH registers, counter
+       value is equal to first value of CNTL and CNTH */
+	  timecounter = (((uint32_t) high1 << 16U) | low);
+  }
+
+  return timecounter;
+}
+
+//-----------------------------------------------------------------------------
+
 /**
   * @brief  Period elapsed callback in non blocking mode
   * @note   This function is called  when TIM4 interrupt took place, inside
@@ -85,8 +109,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 			HAL_GPIO_WritePin(GPIOB, LED1_Pin, (!HAL_GPIO_ReadPin(GPIOB, LED1_Pin)) & 1);//set ON/OFF LED1
 
 			char buf[32];
-			uint32_t sec = HAL_GetTick();
-			sec_to_str_time(sec / 1000, buf);
+			uint32_t sec = ReadTimeCounter(&hrtc);//HAL_GetTick();
+			sec_to_str_time(sec, buf);
 			//sprintf(buf, "%lu.%03lu", ms / 1000, ms % 1000);
 			ssd1306_text_xy(buf, ssd1306_calcx(strlen(buf)), 2);//send string to Screen
 		}
@@ -244,7 +268,7 @@ void Report(const char *txt, bool addCRLF, bool addTime)
 	if (!buf) return;
 
 	//create buffer with data for sending to UART1 and USB
-	if (addTime) sprintf(buf, "[%06lu.%03lu] | ", HAL_GetTick()/1000, HAL_GetTick() % 1000);
+	if (addTime) sprintf(buf, "[%08lu] | ", ReadTimeCounter(&hrtc));//HAL_GetTick()/1000, HAL_GetTick() % 1000);
 	strcat(buf, txt);
 	if (addCRLF) strcat(buf, "\r\n");
 	len = strlen(buf);
@@ -280,16 +304,16 @@ void errLedOn(const char *from)
 
 //-----------------------------------------------------------------------------
 
-uint32_t get_tmr(uint32_t msec)
+uint32_t get_tmr(uint32_t sec)
 {
-	return (HAL_GetTick() + msec);
+	return (ReadTimeCounter(&hrtc) + sec);
 }
 
 //----------------------------------------------------------------------------------------
 
-bool check_tmr(uint32_t msec)
+bool check_tmr(uint32_t sec)
 {
-	return (HAL_GetTick() >= msec ? true : false);
+	return (ReadTimeCounter(&hrtc) >= sec ? true : false);
 }
 
 //******************************************************************************
@@ -345,7 +369,7 @@ int main(void)
     int32_t temp, pres, humi = 0;
     char sensorType[64] = {0};
 
-    uint32_t wait_sensor = get_tmr(2250);//set wait time to 1 sec.
+    uint32_t wait_sensor = get_tmr(2);//set wait time to 1 sec.
 #endif
 
 

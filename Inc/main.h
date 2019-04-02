@@ -32,26 +32,11 @@ typedef enum
   HAL_BUSY     = 0x02U,
   HAL_TIMEOUT  = 0x03U
 } HAL_StatusTypeDef;
-
-
-#ifndef HAL_OK
-	#define HAL_OK      0x00U
-#endif
-#ifndef HAL_ERROR
-	#define HAL_ERROR   0X01U
-#endif
-#ifndef HAL_BUSY
-	#define HAL_BUSY    0x02U
-#endif
-#ifndef HAL_TIMEOUT
-	#define HAL_TIMEOUT 0x03U
-#endif
-
 */
 
 #define wait_tick_def 1000
 #ifdef SET_BMP
-	#define wait_sensor_def 5000
+	#define wait_sensor_def 5
 #endif
 
 
@@ -87,21 +72,21 @@ typedef enum
 
 //----------------------------------------------------------------------------
 
-extern I2C_HandleTypeDef hi2c2;
-extern HAL_StatusTypeDef i2cError;
-extern UART_HandleTypeDef huart1;
+I2C_HandleTypeDef hi2c2;
+HAL_StatusTypeDef i2cError;
+UART_HandleTypeDef huart1;
 
-extern result_t sensors;
+result_t sensors;
 
-extern const uint32_t min_wait_ms;
-extern const uint32_t max_wait_ms;
+const uint32_t min_wait_ms;
+const uint32_t max_wait_ms;
 
 //----------------------------------------------------------------------------
 
-extern uint32_t get_tmr(uint32_t msec);
-extern bool check_tmr(uint32_t msec);
-extern void Report(const char *txt, bool addCRLF, bool addTime);
-extern void errLedOn(const char *from);
+uint32_t get_tmr(uint32_t msec);
+bool check_tmr(uint32_t msec);
+void Report(const char *txt, bool addCRLF, bool addTime);
+void errLedOn(const char *from);
 
 
 void Error_Handler(void);
