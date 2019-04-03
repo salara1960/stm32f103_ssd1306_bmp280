@@ -22,9 +22,9 @@ HAL_StatusTypeDef i2c_master_read_sensor(uint8_t reg, uint8_t *data_rd, size_t s
 //-----------------------------------------------------------------------------
 HAL_StatusTypeDef i2c_master_reset_sensor(uint8_t *chip_id)
 {
+uint8_t dat[] = {BMP280_REG_RESET, BMP280_RESET_VALUE};
 
-    uint8_t dat[] = {BMP280_REG_RESET, BMP280_RESET_VALUE};
-    if ((i2cError = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, 2, max_wait_ms)) != HAL_OK) {
+	if ((i2cError = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, 2, max_wait_ms)) != HAL_OK) {
     	errLedOn(__func__);
     	return i2cError;
     }
@@ -41,14 +41,14 @@ HAL_StatusTypeDef i2c_master_reset_sensor(uint8_t *chip_id)
 //-----------------------------------------------------------------------------
 HAL_StatusTypeDef i2c_master_test_sensor(uint8_t *stat, uint8_t *mode, uint8_t *conf, uint8_t chip_id)
 {
+uint8_t dat[] = {BMP280_REG_CTRL,
+				 BMP280_OSRS_T | BMP280_OSRS_P | BMP280_FORCED1_MODE,
+				 BMP280_REG_CONFIG,
+				 BMP280_CONF_T_SB | BMP280_CONF_FILTER | BMP280_CONF_SPI3W,
+				 BME280_REG_CTRL_HUM, //for BME280_SENSOR only
+				 BME280_OSRS_H};      //for BME280_SENSOR only
+uint16_t len = sizeof(dat);
 
-    uint8_t dat[] = {BMP280_REG_CTRL,
-    		         BMP280_OSRS_T | BMP280_OSRS_P | BMP280_FORCED1_MODE,
-					 BMP280_REG_CONFIG,
-					 BMP280_CONF_T_SB | BMP280_CONF_FILTER | BMP280_CONF_SPI3W,
-					 BME280_REG_CTRL_HUM, //for BME280_SENSOR only
-					 BME280_OSRS_H};      //for BME280_SENSOR only
-    uint16_t len = sizeof(dat);
     if (chip_id != BME280_SENSOR) len -= 2;
     if ((i2cError = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, len, max_wait_ms)) != HAL_OK) {
     	errLedOn(__func__);

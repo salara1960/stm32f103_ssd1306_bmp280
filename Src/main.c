@@ -283,9 +283,12 @@ void errLedOn(const char *from)
     HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
 
     if (from) {
-    	char stx[128];
-    	sprintf(stx,"Error in %s function\r\n", from);
-    	Report(stx, false, true);
+    	char *stx = (char *)calloc(1, strlen(from) + 32);
+    	if (stx) {
+    		sprintf(stx,"Error in %s function\r\n", from);
+    		Report(stx, false, true);
+    		free(stx);
+    	}
     }
 }
 
