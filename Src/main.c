@@ -5,7 +5,8 @@
 
 //const char *ver = "ver. 0.1";
 //const char *ver = "ver. 1.1";//02.04.2019
-const char *ver = "ver. 1.2";//02.04.2019
+//const char *ver = "ver. 1.2";//02.04.2019
+const char *ver = "ver. 1.3";//03.04.2019
 
 
 I2C_HandleTypeDef hi2c2;
@@ -21,6 +22,7 @@ const uint32_t max_wait_ms = 1000;
 result_t sensors = {0.0, 0.0, 0.0};
 
 static uint32_t msCounter = wait_tick_def;
+
 static uint32_t secCounter = 0;
 
 //-----------------------------------------------------------------------------
@@ -66,7 +68,7 @@ long day, min, hour, seconda;
 //-----------------------------------------------------------------------------
 uint32_t get_secCounter()
 {
-	return (secCounter);
+	return secCounter;
 }
 //-----------------------------------------------------------------------------
 void inc_secCounter()
@@ -236,11 +238,34 @@ static void MX_USART1_Init(void)
   if (HAL_UART_Init(&huart1) != HAL_OK) Error_Handler();
 
 }
+//----------------------------------------------------------------------------------------
+
+//  if (return pointer != NULL) you must free this pointer after used
+char *sec_to_string(uint32_t sec)
+{
+long day, min, hour, seconda;
+
+	day = sec / (60 * 60 * 24);
+	sec = sec % (60 * 60 * 24);
+
+    hour = sec / (60 * 60);
+    sec = sec % (60 * 60);
+
+    min = sec / (60);
+    sec = sec % 60;
+
+    seconda = sec;
+
+    char *stx = (char *)calloc(1, 16);
+
+    if (stx) sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, seconda);
+
+    return stx;
+}
 
 //----------------------------------------------------------------------------------------
 //	Out to UART1 data from buffer (like printf)
-//     txt - buffer with data for send to uart
-//     len - total bytes for sending
+//     txt - string for send to uart
 //     addCRLF - flag append or not "\r\n" to data before sending
 //     addTime - flag insert or not TickCount before data
 void Report(const char *txt, bool addCRLF, bool addTime)
@@ -254,11 +279,23 @@ void Report(const char *txt, bool addCRLF, bool addTime)
 	char *buf = (char *)calloc(1, len + 1);//get buffer for data in heap memory
 	if (!buf) return;
 
-	//create buffer with data for sending to UART1 and USB
-	if (addTime) sprintf(buf, "[%08lu] | ", get_secCounter());
+	if (addTime) {
+		/*RTC_TimeTypeDef sTime;
+		if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) == HAL_OK) {
+			sprintf(buf, "%02u:%02u:%02u | ", sTime.Hours, sTime.Minutes, sTime.Seconds);
+		}*/
+
+		char *stime = sec_to_string(get_secCounter());
+		if (stime) {
+			sprintf(buf, "%s | ", stime);
+			free(stime);//release memory by pointer stime
+		}
+
+	}
 	strcat(buf, txt);
 	if (addCRLF) strcat(buf, "\r\n");
 	len = strlen(buf);
+
 #ifdef SET_UART
 	// send data to UART1
 	if (HAL_UART_Transmit(&huart1, (uint8_t *)buf, len, max_wait_ms) != HAL_OK) errLedOn(NULL);
@@ -354,12 +391,14 @@ int main(void)
     int32_t temp, pres, humi = 0;
     char sensorType[64] = {0};
 
-    uint32_t wait_sensor = get_tmr(wait_sensor_def);//set wait time to 1 sec.
+    uint32_t wait_sensor = get_tmr(1);//set wait time to 1 sec.
 #endif
 
     //----------------------     MAIN LOOP    -----------------------------------
 
     while (1) {
+
+    	HAL_Delay(1);
 
     	//------------------------------------------------------------------------
 #ifdef SET_BMP

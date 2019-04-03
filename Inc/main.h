@@ -16,6 +16,7 @@ extern "C" {
 
 #include "stm32f1xx_hal.h"
 #include "stm32f1xx_hal_uart.h"
+//#include "stm32f1xx_hal_rtc.h"
 
 //----------------------------------------------------------------------------
 
