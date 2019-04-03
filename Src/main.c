@@ -7,6 +7,7 @@
 //const char *ver = "ver. 1.1";//02.04.2019
 const char *ver = "ver. 1.2";//02.04.2019
 
+
 I2C_HandleTypeDef hi2c2;
 HAL_StatusTypeDef i2cError = HAL_OK;
 
@@ -67,6 +68,7 @@ uint32_t get_secCounter()
 {
 	return (secCounter);
 }
+//-----------------------------------------------------------------------------
 void inc_secCounter()
 {
 	secCounter++;
@@ -84,19 +86,21 @@ void inc_secCounter()
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
 	if (htim->Instance == TIM4) {
+
 		HAL_IncTick();
+
 		//-------------   LED ON/OFF and show tickCounter to Screen   -----------
 		if (msCounter) msCounter--;
 		if (!msCounter) {
 			inc_secCounter();
 			msCounter = wait_tick_def;
 			HAL_GPIO_WritePin(GPIOB, LED1_Pin, (!HAL_GPIO_ReadPin(GPIOB, LED1_Pin)) & 1);//set ON/OFF LED1
-/**/
+
 			char buf[32];
 			ssd1306_text_xy(buf, ssd1306_calcx(sec_to_str_time(get_secCounter(), buf)), 2);//send string to Screen
-/**/
 		}
 		//---------------------------------------------------------------------
+
 	}
 }
 
@@ -178,13 +182,13 @@ static void MX_RTC_Init(void)
   RTC_TimeTypeDef sTime = {0};
   RTC_DateTypeDef DateToUpdate = {0};
 
-  /* Initialize RTC Only */
+  // Initialize RTC Only
   hrtc.Instance          = RTC;
   hrtc.Init.AsynchPrediv = RTC_AUTO_1_SECOND;
   hrtc.Init.OutPut       = RTC_OUTPUTSOURCE_ALARM;
   if (HAL_RTC_Init(&hrtc) != HAL_OK) Error_Handler();
 
-  /* Initialize RTC and set the Time and Date */
+  // Initialize RTC and set the Time and Date
   sTime.Hours   = 0x0;
   sTime.Minutes = 0x0;
   sTime.Seconds = 0x0;
@@ -241,7 +245,6 @@ static void MX_USART1_Init(void)
 //     addTime - flag insert or not TickCount before data
 void Report(const char *txt, bool addCRLF, bool addTime)
 {
-
 	if (!txt)  return;
 
 	uint16_t len = strlen(txt);
@@ -277,9 +280,12 @@ void errLedOn(const char *from)
 	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
 
 	if (from) {
-		char stx[128];
-		sprintf(stx,"Error in %s function\r\n", from);
-		Report(stx, false, true);
+		char *stx = (char *)calloc(1, strlen(from) + 32);
+		if (stx) {
+			sprintf(stx,"Error in %s function\r\n", from);
+			Report(stx, false, true);
+			free(stx);
+		}
 	}
 }
 

@@ -47,11 +47,6 @@
 
 //------------------------------------------------------------------------
 
-//extern const uint32_t min_wait_ms;
-//extern const uint32_t max_wait_ms;
-
-//------------------------------------------------------------------------
-
 void errLedOn(const char *from);
 void ssd1306_on(bool flag);
 void ssd1306_init();
