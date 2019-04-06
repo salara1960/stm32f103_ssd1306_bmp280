@@ -5,8 +5,6 @@
 
 //------------------------------------------------------------------------
 
-#ifdef DISPLAY
-
 #define OLED_I2C_ADDRESS                0x3C << 1
 
 // Control byte
@@ -47,7 +45,6 @@
 
 //------------------------------------------------------------------------
 
-void errLedOn(const char *from);
 void ssd1306_on(bool flag);
 void ssd1306_init();
 void ssd1306_invert();
@@ -59,9 +56,6 @@ void ssd1306_text_xy(const char *stroka, uint8_t cx, uint8_t cy);
 void ssd1306_text(const char *stroka);
 
 //------------------------------------------------------------------------
-
-#endif
-
 
 #endif /* __SSD1306_H__ */
 

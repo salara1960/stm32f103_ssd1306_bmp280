@@ -9,8 +9,8 @@
 <!ATTLIST board id CDATA #REQUIRED>
 ]>
 <targetDefinitions>
-  <board id="ssd1306">
-    <name>ssd1306</name>
+  <board id="ssd1306_def">
+    <name>ssd1306_def</name>
     <dbgIF>SWD</dbgIF>
     <dbgDEV>ST-Link</dbgDEV>
     <mcuId>stm32f103c8tx</mcuId>

@@ -21,8 +21,10 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "stm32f1xx_it.h"
+#include "ssd1306.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -56,6 +58,8 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
+extern RTC_HandleTypeDef hrtc;
+extern TIM_HandleTypeDef htim2;
 extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim4;
 
@@ -200,6 +204,40 @@ void SysTick_Handler(void)
 /******************************************************************************/
 
 /**
+  * @brief This function handles RTC global interrupt.
+  */
+void RTC_IRQHandler(void)
+{
+  /* USER CODE BEGIN RTC_IRQn 0 */
+	//HAL_GPIO_TogglePin(GPIOB, LED_ALARM_Pin);//set ON/OFF LED1
+  /* USER CODE END RTC_IRQn 0 */
+  HAL_RTCEx_RTCIRQHandler(&hrtc);
+  /* USER CODE BEGIN RTC_IRQn 1 */
+
+  /* USER CODE END RTC_IRQn 1 */
+}
+
+/**
+  * @brief This function handles TIM2 global interrupt.
+  */
+void TIM2_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM2_IRQn 0 */
+
+	HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
+	inc_secCounter();
+
+  /* USER CODE END TIM2_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim2);
+  /* USER CODE BEGIN TIM2_IRQn 1 */
+  if (!i2cError) {
+	  char buf[32];
+	  ssd1306_text_xy(buf, ssd1306_calcx(sec_to_str_time(get_secCounter(), buf)), 2);
+  }
+  /* USER CODE END TIM2_IRQn 1 */
+}
+
+/**
   * @brief This function handles TIM4 global interrupt.
   */
 void TIM4_IRQHandler(void)
@@ -209,7 +247,7 @@ void TIM4_IRQHandler(void)
   /* USER CODE END TIM4_IRQn 0 */
   HAL_TIM_IRQHandler(&htim4);
   /* USER CODE BEGIN TIM4_IRQn 1 */
-
+  //HAL_GPIO_TogglePin(GPIOB, LED_ALARM_Pin);//set ON/OFF LED1
   /* USER CODE END TIM4_IRQn 1 */
 }
 
