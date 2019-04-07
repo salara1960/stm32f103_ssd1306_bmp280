@@ -90,5 +90,13 @@
 			<name>Drivers/STM32F1xx_HAL_Driver/stm32f1xx_hal_flash_ex.c</name>
 			<type>1</type>
 			<location>/home/alarm/STM32Cube/Repository/STM32Cube_FW_F1_V1.7.0/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash_ex.c</location>
+		</link><link>
+			<name>Drivers/STM32F1xx_HAL_Driver/stm32f1xx_hal_adc.c</name>
+			<type>1</type>
+			<location>/home/alarm/STM32Cube/Repository/STM32Cube_FW_F1_V1.7.0/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc.c</location>
+		</link><link>
+			<name>Drivers/STM32F1xx_HAL_Driver/stm32f1xx_hal_adc_ex.c</name>
+			<type>1</type>
+			<location>/home/alarm/STM32Cube/Repository/STM32Cube_FW_F1_V1.7.0/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_adc_ex.c</location>
 		</link></linkedResources>
 </projectDescription>

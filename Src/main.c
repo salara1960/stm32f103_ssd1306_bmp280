@@ -48,7 +48,8 @@ arm-none-eabi-objcopy -O ihex "${BuildArtifactFileBaseName}.elf" "${BuildArtifac
 //const char *ver = "ver. 1.3";//03.04.2019
 //const char *ver = "ver. 1.4";//05.04.2019
 //const char *ver = "ver. 1.5";//05.04.2019 put user code in corresponding block
-const char *ver = "ver. 1.6";//06.04.2019 used TIM2 (1 sec. period) with interrupt
+//const char *ver = "ver. 1.6";//06.04.2019 used TIM2 (1 sec. period) with interrupt
+const char *ver = "ver. 1.7";//07.04.2019 used ADC1 with interrupt for measure the supply voltage
 
 /* USER CODE END PD */
 
@@ -58,6 +59,8 @@ const char *ver = "ver. 1.6";//06.04.2019 used TIM2 (1 sec. period) with interru
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
 I2C_HandleTypeDef hi2c2;
 
 RTC_HandleTypeDef hrtc;
@@ -67,12 +70,15 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
+
 HAL_StatusTypeDef i2cError = HAL_OK;
 const uint32_t min_wait_ms = 350;
 const uint32_t max_wait_ms = 1000;
 result_t sensors = {0.0, 0.0, 0.0};
 //static uint32_t msCounter = wait_tick_def;
 volatile static uint32_t secCounter = 0;
+volatile static float dataADC = 0.0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -82,15 +88,16 @@ static void MX_RTC_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
-//int sec_to_str_time(uint32_t sec, char *stx);
+
 uint32_t get_secCounter();
-//void inc_secCounter();
 char *sec_to_string(uint32_t sec);
 void Report(const char *txt, bool addCRLF, bool addTime);
 void errLedOn(const char *from);
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -130,6 +137,7 @@ int main(void)
   MX_I2C2_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
 
     HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
@@ -156,22 +164,25 @@ int main(void)
     uint8_t reg_stat = 0;
     uint8_t reg_mode = 0;
     uint8_t reg_conf = 0;
-    uint8_t col      = 0;
     size_t d_size    = 1;
     int32_t temp, pres, humi = 0;
-    char sensorType[64] = {0};
-
-    uint32_t wait_sensor = get_tmr(1);//set wait time to 1 sec.
+    char sensorType[32] = {0};
 
 
     // start timer2 + interrupt
     HAL_TIM_Base_Start(&htim2);
     HAL_TIM_Base_Start_IT(&htim2);
 
+
+    //start ADC1 + interrupt
+    HAL_ADC_Start_IT(&hadc1);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
+    uint32_t wait_sensor = get_tmr(1);//set wait time to 1 sec.
 
   while (1) {
     /* USER CODE END WHILE */
@@ -186,7 +197,7 @@ int main(void)
     		wait_sensor = get_tmr(wait_sensor_def);
     		//
     		if (i2c_master_reset_sensor(&reg_id) != HAL_OK) continue;
-    		sprintf(stx,"ADDR=0x%02X ", BMP280_ADDR);
+    		sprintf(stx,"VCC=%.3f v, ADDR=0x%02X ", dataADC, BMP280_ADDR);
     		sensorType[0] = 0;
     		switch (reg_id) {
     			case BMP280_SENSOR : strcpy(sensorType,"BMP280"); d_size = 6; break;
@@ -215,10 +226,9 @@ int main(void)
     				strcat(stx,"\r\n");
 
     				if (i2cError == HAL_OK) {
-    					col = ssd1306_calcx(strlen(sensorType));
-    					sprintf(toScreen, "%s\n\nmmHg : %.2f\nDegC : %.2f", sensorType, sensors.pres, sensors.temp);
+    					sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", sensors.pres, sensors.temp);
     					if (reg_id == BME280_SENSOR) sprintf(toScreen+strlen(toScreen),"\nHumi:%.2f %%rH", sensors.humi);
-    					ssd1306_text_xy(toScreen, col, 4);//send string to screen
+    					ssd1306_text_xy(toScreen, 1, 6);//send string to screen
     				}
 
     			}
@@ -264,18 +274,64 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV16;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV8;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     Error_Handler();
   }
-  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC;
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_RTC|RCC_PERIPHCLK_ADC;
   PeriphClkInit.RTCClockSelection = RCC_RTCCLKSOURCE_LSE;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV8;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /** Common config 
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Regular Channel 
+  */
+  sConfig.Channel = ADC_CHANNEL_5;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -466,8 +522,8 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, LED1_Pin|LED2_Pin, GPIO_PIN_RESET);
@@ -482,6 +538,15 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+//-----------------------------------------------------------------------------
+//-----------------------------------------------------------------------------
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+	if (hadc->Instance == ADC1) {
+		dataADC = ((float)HAL_ADC_GetValue(hadc)) * 3 / 4096;
+	}
+}
+//-----------------------------------------------------------------------------
 int sec_to_str_time(uint32_t sec, char *stx)
 {
 long day, min, hour, seconda;
@@ -614,7 +679,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-
+  if (htim->Instance == TIM2) {
+  		if (!i2cError) {
+  			char buf[64];
+  			uint8_t col = ssd1306_calcx(sec_to_str_time(get_secCounter(), buf));
+  			sprintf(buf+strlen(buf), "\n\nvolt : %.3f", dataADC);
+  			ssd1306_text_xy(buf, col, 2);
+  		}
+  	}
   /* USER CODE END Callback 1 */
 }
 

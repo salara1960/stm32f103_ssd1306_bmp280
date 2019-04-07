@@ -72,6 +72,7 @@ const uint32_t max_wait_ms;
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
+
 int sec_to_str_time(uint32_t sec, char *stx);
 void inc_secCounter();
 uint32_t get_secCounter();
