@@ -186,14 +186,13 @@ uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0};
 //-----------------------------------------------------------------------------------------
 void ssd1306_clear()
 {
-uint8_t dat[2] = {0}, zero[129] = {0};
-HAL_StatusTypeDef rt = 0;
+uint8_t i, dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0}, zero[129] = {0};
+HAL_StatusTypeDef rt = HAL_OK;
 
     zero[0] = OLED_CONTROL_BYTE_DATA_STREAM;
-    dat[0] = OLED_CONTROL_BYTE_CMD_SINGLE;
-    for (int i = 0; i < 8; i++) {
+    for (i = 0; i < 8; i++) {
     	dat[1] = 0xB0 | i;
-    	rt  = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat,  2,   min_wait_ms);
+    	rt  = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat,    2, min_wait_ms);
     	rt |= HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, zero, 129, max_wait_ms);
     }
 
@@ -211,7 +210,7 @@ HAL_StatusTypeDef rt = HAL_OK;
     for (i = 1; i < 129; i++) buf[i] = 0xFF >> (i % 8);
     for (i = 0; i < 8; i++) {
     	dat[1] = 0xB0 | i;
-    	rt  = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
+    	rt  = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat,   2, min_wait_ms);
     	rt |= HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, buf, 129, max_wait_ms);
     }
 

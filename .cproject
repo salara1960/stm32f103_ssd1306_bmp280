@@ -238,7 +238,7 @@
 	<storageModule moduleId="org.eclipse.cdt.core.LanguageSettingsProviders"/>
 	<storageModule moduleId="refreshScope" versionNumber="2">
 		<configuration configurationName="Debug">
-			<resource resourceType="PROJECT" workspacePath="ssd1306_def"/>
+			<resource resourceType="PROJECT" workspacePath="/ssd1306_def"/>
 		</configuration>
 		<configuration configurationName="Release"/>
 	</storageModule>

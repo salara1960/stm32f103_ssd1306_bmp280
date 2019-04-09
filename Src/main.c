@@ -49,7 +49,8 @@ arm-none-eabi-objcopy -O ihex "${BuildArtifactFileBaseName}.elf" "${BuildArtifac
 //const char *ver = "ver. 1.4";//05.04.2019
 //const char *ver = "ver. 1.5";//05.04.2019 put user code in corresponding block
 //const char *ver = "ver. 1.6";//06.04.2019 used TIM2 (1 sec. period) with interrupt
-const char *ver = "ver. 1.7";//07.04.2019 used ADC1 with interrupt for measure the supply voltage
+//const char *ver = "ver. 1.7";//07.04.2019 used ADC1 with interrupt for measure the supply voltage
+const char *ver = "ver. 1.8";//09.04.2019 used DMA for trasmit data to usart1 (500000 8N1)
 
 /* USER CODE END PD */
 
@@ -68,6 +69,7 @@ RTC_HandleTypeDef hrtc;
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart1;
+DMA_HandleTypeDef hdma_usart1_tx;
 
 /* USER CODE BEGIN PV */
 
@@ -75,7 +77,6 @@ HAL_StatusTypeDef i2cError = HAL_OK;
 const uint32_t min_wait_ms = 350;
 const uint32_t max_wait_ms = 1000;
 result_t sensors = {0.0, 0.0, 0.0};
-//static uint32_t msCounter = wait_tick_def;
 volatile static uint32_t secCounter = 0;
 volatile static float dataADC = 0.0;
 
@@ -84,6 +85,7 @@ volatile static float dataADC = 0.0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_RTC_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_USART1_UART_Init(void);
@@ -133,6 +135,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_RTC_Init();
   MX_I2C2_Init();
   MX_USART1_UART_Init();
@@ -142,21 +145,32 @@ int main(void)
 
     HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
 
+    // start timer2 + interrupt
+    HAL_TIM_Base_Start(&htim2);
+    HAL_TIM_Base_Start_IT(&htim2);
+    //start ADC1 + interrupt
+    HAL_ADC_Start_IT(&hadc1);
+
     char stx[256] = {0};
     char toScreen[128] = {0};
+
+    HAL_Delay(1000);
+
+    sprintf(stx, "Start main %s", ver);
+    Report(stx, true, true);//send data to UART1
 
     ssd1306_on(true);//screen ON
     if (!i2cError) {
     	ssd1306_init();//screen INIT
-    	if (!i2cError) ssd1306_pattern();//set any params for screen
+    	if (!i2cError) {
+    		ssd1306_pattern();//set any params for screen
+    		if (!i2cError) {
+    			//ssd1306_invert();//set inverse color mode
+    			//if (!i2cError)
+    				ssd1306_clear();//clear screen
+    		}
+    	}
     }
-
-    sprintf(stx, "Start main %s", ver);
-    if (!i2cError) {
-    	ssd1306_invert();//set inverse color mode
-    	if (!i2cError) ssd1306_clear();//clear screen
-    }
-    Report(stx, true, true);//send data to UART1
 
     // variable declaration for BMP280 sensor
     uint8_t data_rdx[256] = {0};
@@ -167,15 +181,6 @@ int main(void)
     size_t d_size    = 1;
     int32_t temp, pres, humi = 0;
     char sensorType[32] = {0};
-
-
-    // start timer2 + interrupt
-    HAL_TIM_Base_Start(&htim2);
-    HAL_TIM_Base_Start_IT(&htim2);
-
-
-    //start ADC1 + interrupt
-    HAL_ADC_Start_IT(&hadc1);
 
   /* USER CODE END 2 */
 
@@ -189,7 +194,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    	HAL_Delay(1);
+    	HAL_Delay(10);
 
     	//------------------------------------------------------------------------
 
@@ -197,7 +202,7 @@ int main(void)
     		wait_sensor = get_tmr(wait_sensor_def);
     		//
     		if (i2c_master_reset_sensor(&reg_id) != HAL_OK) continue;
-    		sprintf(stx,"VCC=%.3f v, ADDR=0x%02X ", dataADC, BMP280_ADDR);
+    		sprintf(stx,"Vcc=%.3f v, ADDR=0x%02X ", dataADC, BMP280_ADDR);
     		sensorType[0] = 0;
     		switch (reg_id) {
     			case BMP280_SENSOR : strcpy(sensorType,"BMP280"); d_size = 6; break;
@@ -206,15 +211,15 @@ int main(void)
     		}
     		sprintf(stx+strlen(stx),"(%s)", sensorType);
     		if (i2c_master_test_sensor(&reg_stat, &reg_mode, &reg_conf, reg_id) != HAL_OK) {
-    			sprintf(stx+strlen(stx)," No ack...try again. (reg_id=0x%02x)\r\n", reg_id);
-    			Report(stx, false, true);//send data to UART1
+    			sprintf(stx+strlen(stx)," No ack...try again. (reg_id=0x%02x)", reg_id);
+    			Report(stx, true, true);//send data to UART1
     			continue;
     		}
     		reg_stat &= 0x0f;
     		memset(data_rdx, 0, DATA_LENGTH);
     		if (i2c_master_read_sensor(BMP280_REG_PRESSURE, &data_rdx[0], d_size) == HAL_OK) {
     			if (bmp280_readCalibrationData(reg_id) != HAL_OK) {
-    				sprintf(stx+strlen(stx)," Reading Calibration Data ERROR\r\n");
+    				sprintf(stx+strlen(stx)," Reading Calibration Data ERROR");
     			} else {
     				pres = temp = 0;
     				pres = (data_rdx[0] << 12) | (data_rdx[1] << 4) | (data_rdx[2] >> 4);
@@ -223,7 +228,6 @@ int main(void)
     				bmp280_CalcAll(&sensors, reg_id, temp, pres, humi);
     				sprintf(stx+strlen(stx)," Press=%.2f mmHg, Temp=%.2f DegC", sensors.pres, sensors.temp);
     				if (reg_id == BME280_SENSOR) sprintf(stx+strlen(stx)," Humidity=%.2f %%rH", sensors.humi);
-    				strcat(stx,"\r\n");
 
     				if (i2cError == HAL_OK) {
     					sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", sensors.pres, sensors.temp);
@@ -232,8 +236,8 @@ int main(void)
     				}
 
     			}
-    		} else strcat(stx,"Read sensor error\r\n");
-    		Report(stx, false, true);//send data to UART1
+    		} else strcat(stx,"Read sensor error");
+    		Report(stx, true, true);//send data to UART1
     		//
     	}
 
@@ -493,7 +497,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 115200;
+  huart1.Init.BaudRate = 500000;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -507,6 +511,21 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE BEGIN USART1_Init 2 */
 
   /* USER CODE END USART1_Init 2 */
+
+}
+
+/** 
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void) 
+{
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 4, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
 
 }
 
@@ -543,26 +562,24 @@ static void MX_GPIO_Init(void)
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
 	if (hadc->Instance == ADC1) {
-		dataADC = ((float)HAL_ADC_GetValue(hadc)) * 3 / 4096;
+		dataADC = ((float)HAL_ADC_GetValue(hadc)) * 3.3 / 4096;
 	}
 }
 //-----------------------------------------------------------------------------
 int sec_to_str_time(uint32_t sec, char *stx)
 {
-long day, min, hour, seconda;
+uint32_t s = sec;
 
-	day = sec / (60 * 60 * 24);
-	sec = sec % (60 * 60 * 24);
+	uint32_t day = s / (60 * 60 * 24);
+	s %= (60 * 60 * 24);
 
-    hour = sec / (60 * 60);
-    sec = sec % (60 * 60);
+    uint32_t hour = s / (60 * 60);
+    s %= (60 * 60);
 
-    min = sec / (60);
-    sec = sec % 60;
+    uint32_t min = s / (60);
+    s %= 60;
 
-    seconda = sec;
-
-    return (sprintf(stx, "%lu.%02lu:%02lu:%02lu", day, hour, min, seconda));
+    return (sprintf(stx, "%lu.%02lu:%02lu:%02lu", day, hour, min, s));
 }
 //-----------------------------------------------------------------------------
 uint32_t get_secCounter()
@@ -578,22 +595,20 @@ void inc_secCounter()
 //  if (return pointer != NULL) you must free this pointer after used
 char *sec_to_string(uint32_t sec)
 {
-long day, min, hour, seconda;
+	char *stx = (char *)calloc(1, 16);
+	if (stx) {
+		uint32_t s = sec;
+		uint32_t day = s / (60 * 60 * 24);
+		s %= (60 * 60 * 24);
 
-	day = sec / (60 * 60 * 24);
-	sec = sec % (60 * 60 * 24);
+		uint32_t hour = s / (60 * 60);
+		s %= (60 * 60);
 
-    hour = sec / (60 * 60);
-    sec = sec % (60 * 60);
+		uint32_t min = s / (60);
+		s %= 60;
 
-    min = sec / (60);
-    sec = sec % 60;
-
-    seconda = sec;
-
-    char *stx = (char *)calloc(1, 16);
-
-    if (stx) sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, seconda);
+		sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, s);
+	}
 
     return stx;
 }
@@ -609,14 +624,14 @@ void Report(const char *txt, bool addCRLF, bool addTime)
 	uint16_t len = strlen(txt);
 	if (addCRLF) len += 2;
 	if (addTime) len += 16;
-	if (len > 255) len = 255;
 	char *buf = (char *)calloc(1, len + 1);//get buffer for data in heap memory
 	if (!buf) return;
 
 	if (addTime) {
 		char *stime = sec_to_string(get_secCounter());
 		if (stime) {
-			sprintf(buf, "%s | ", stime);
+			strcpy(buf, stime);
+			strcat(buf, " | ");
 			free(stime);//release memory by pointer stime
 		}
 	}
@@ -624,10 +639,10 @@ void Report(const char *txt, bool addCRLF, bool addTime)
 	if (addCRLF) strcat(buf, "\r\n");
 	len = strlen(buf);
 
-	// send data to UART1
-	if (HAL_UART_Transmit(&huart1, (uint8_t *)buf, len, max_wait_ms) != HAL_OK) errLedOn(NULL);
+	// send data to UART1 via DMA1_Channel4
+	if (HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buf, len) != HAL_OK) errLedOn(NULL);
 
-	free(buf);//release buffer's memory
+	free(buf);
 
 }
 //------------------------------------------------------------------------------------------
@@ -636,30 +651,31 @@ void Report(const char *txt, bool addCRLF, bool addTime)
 void errLedOn(const char *from)
 {
 	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
-	HAL_Delay(100);
+	HAL_Delay(200);
 	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_SET);//LED OFF
 	HAL_Delay(200);
 	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
 
 	if (from) {
-		char *stx = (char *)calloc(1, strlen(from) + 32);
+		char *stx = (char *)calloc(1, strlen(from) + 16);
 		if (stx) {
-			sprintf(stx,"Error in %s function\r\n", from);
-			Report(stx, false, true);
+			sprintf(stx, "Error in '%s'", from);
+			Report(stx, true, true);
 			free(stx);
 		}
 	}
 }
-//-----------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 uint32_t get_tmr(uint32_t sec)
 {
 	return (get_secCounter() + sec);
 }
-//----------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------------
 bool check_tmr(uint32_t sec)
 {
 	return (get_secCounter() >= sec ? true : false);
 }
+//------------------------------------------------------------------------------------------
 /* USER CODE END 4 */
 
 /**

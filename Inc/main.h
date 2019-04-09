@@ -64,7 +64,7 @@ const uint32_t max_wait_ms;
 /* USER CODE BEGIN EM */
 
 //#define wait_tick_def 1000
-#define wait_sensor_def 5
+#define wait_sensor_def 10
 
 /* USER CODE END EM */
 
