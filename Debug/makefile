@@ -46,8 +46,6 @@ clean:
 
 post-build:
 	-@echo 'Generating hex and Printing size information:'
-	arm-none-eabi-objcopy -O ihex "ssd1306_def.elf" "ssd1306_def.hex"
-	arm-none-eabi-size "ssd1306_def.elf"
 	arm-none-eabi-objcopy -O binary "ssd1306_def.elf" "ssd1306_def.bin"
 	ls -la | grep "ssd1306_def.*"
 	-@echo ' '

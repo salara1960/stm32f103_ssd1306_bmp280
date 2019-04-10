@@ -35,6 +35,7 @@ extern "C" {
 #include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 #include <time.h>
 #include <math.h>
 
@@ -65,6 +66,7 @@ const uint32_t max_wait_ms;
 
 //#define wait_tick_def 1000
 #define wait_sensor_def 10
+#define MAX_UART_BUF 256
 
 /* USER CODE END EM */
 

@@ -27,9 +27,10 @@
 #include "bmp280.h"
 
 #include "stm32f1xx_hal.h"
+//#include "stm32f1xx_hal_uart.h"
 /*
 post-build steps command:
-arm-none-eabi-objcopy -O ihex "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.hex" && arm-none-eabi-size "${BuildArtifactFileName}" && arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.bin" && ls -la | grep "${BuildArtifactFileBaseName}.*"
+arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.bin" && ls -la | grep "${BuildArtifactFileBaseName}.*"
 */
 
 /* USER CODE END Includes */
@@ -50,7 +51,8 @@ arm-none-eabi-objcopy -O ihex "${BuildArtifactFileBaseName}.elf" "${BuildArtifac
 //const char *ver = "ver. 1.5";//05.04.2019 put user code in corresponding block
 //const char *ver = "ver. 1.6";//06.04.2019 used TIM2 (1 sec. period) with interrupt
 //const char *ver = "ver. 1.7";//07.04.2019 used ADC1 with interrupt for measure the supply voltage
-const char *ver = "ver. 1.8";//09.04.2019 used DMA for trasmit data to usart1 (500000 8N1)
+//const char *ver = "ver. 1.8";//09.04.2019 used DMA for trasmit data to usart1 (500000 8N1)
+const char *ver = "ver. 1.9";//10.04.2019 used interrupt for receive data from uart1 (echo mode)
 
 /* USER CODE END PD */
 
@@ -80,17 +82,25 @@ result_t sensors = {0.0, 0.0, 0.0};
 volatile static uint32_t secCounter = 0;
 volatile static float dataADC = 0.0;
 
+const char *_extDate = "date=";
+volatile static uint32_t extDate = 0;
+static char RxBuf[MAX_UART_BUF];
+volatile uint8_t rx_uk;
+volatile uint8_t uRxByte = 0;
+//static uint32_t TxLine = 0;
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
-static void MX_RTC_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_ADC1_Init(void);
+static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
 
 uint32_t get_secCounter();
@@ -136,11 +146,11 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_RTC_Init();
   MX_I2C2_Init();
   MX_USART1_UART_Init();
   MX_TIM2_Init();
   MX_ADC1_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
     HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
@@ -150,14 +160,10 @@ int main(void)
     HAL_TIM_Base_Start_IT(&htim2);
     //start ADC1 + interrupt
     HAL_ADC_Start_IT(&hadc1);
-
-    char stx[256] = {0};
-    char toScreen[128] = {0};
+    //"start" rx_interrupt
+    HAL_UART_Receive_IT(&huart1, (uint8_t *)&uRxByte, 1);
 
     HAL_Delay(1000);
-
-    sprintf(stx, "Start main %s", ver);
-    Report(stx, true, true);//send data to UART1
 
     ssd1306_on(true);//screen ON
     if (!i2cError) {
@@ -171,6 +177,14 @@ int main(void)
     		}
     	}
     }
+
+    HAL_Delay(1000);
+
+    char stx[256] = {0};
+    char toScreen[128] = {0};
+
+    sprintf(stx, "Start main %s", ver);
+    Report(stx, true, true);//send data to UART1
 
     // variable declaration for BMP280 sensor
     uint8_t data_rdx[256] = {0};
@@ -187,7 +201,7 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-    uint32_t wait_sensor = get_tmr(1);//set wait time to 1 sec.
+    uint32_t wait_sensor = get_tmr(2);//set wait time to 1 sec.
 
   while (1) {
     /* USER CODE END WHILE */
@@ -199,6 +213,7 @@ int main(void)
     	//------------------------------------------------------------------------
 
     	if (check_tmr(wait_sensor)) {
+    		//
     		wait_sensor = get_tmr(wait_sensor_def);
     		//
     		if (i2c_master_reset_sensor(&reg_id) != HAL_OK) continue;
@@ -490,14 +505,15 @@ static void MX_USART1_UART_Init(void)
 {
 
   /* USER CODE BEGIN USART1_Init 0 */
-
+	memset(RxBuf, 0, MAX_UART_BUF);
+	rx_uk = 0;
   /* USER CODE END USART1_Init 0 */
 
   /* USER CODE BEGIN USART1_Init 1 */
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 500000;
+  huart1.Init.BaudRate = 500000;//115200;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -524,7 +540,7 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 4, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
 
 }
@@ -557,14 +573,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-//-----------------------------------------------------------------------------
-//-----------------------------------------------------------------------------
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
-{
-	if (hadc->Instance == ADC1) {
-		dataADC = ((float)HAL_ADC_GetValue(hadc)) * 3.3 / 4096;
-	}
-}
 //-----------------------------------------------------------------------------
 int sec_to_str_time(uint32_t sec, char *stx)
 {
@@ -676,6 +684,44 @@ bool check_tmr(uint32_t sec)
 	return (get_secCounter() >= sec ? true : false);
 }
 //------------------------------------------------------------------------------------------
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
+{
+	if (hadc->Instance == ADC1) {
+		dataADC = ((float)HAL_ADC_GetValue(hadc)) * 3.3 / 4096;
+	}
+}
+//------------------------------------------------------------------------------------------
+/*
+void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance == USART1) {
+		TxLine++;
+		char stx[16];
+		ssd1306_calcx(sprintf(stx, "- %lu -", TxLine));
+		ssd1306_text_xy(stx, ssd1306_calcx(sprintf(stx, "- %lu -", TxLine)), 1);
+	}
+}
+*/
+//------------------------------------------------------------------------------------------
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+	if (huart->Instance == USART1) {
+		RxBuf[rx_uk & 0xff] = (char)uRxByte;
+		if ((uRxByte == 0x0a) || (uRxByte == 0x0d)) {//end of line
+			char *uk = strstr(RxBuf, _extDate);//const char *_extDate = "date=";
+			extDate = atoi(uk + strlen(_extDate));
+			if (uk) sprintf(RxBuf, "%s:%lu\r\n", _extDate, extDate);
+			Report(RxBuf, false, false);
+
+			memset(RxBuf, 0, MAX_UART_BUF);
+			rx_uk = 0;
+		} else rx_uk++;
+
+		HAL_UART_Receive_IT(huart, (uint8_t *)&uRxByte, 1);
+
+	}
+}
+//------------------------------------------------------------------------------------------
 /* USER CODE END 4 */
 
 /**
@@ -696,13 +742,13 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
   /* USER CODE BEGIN Callback 1 */
   if (htim->Instance == TIM2) {
-  		if (!i2cError) {
-  			char buf[64];
-  			uint8_t col = ssd1306_calcx(sec_to_str_time(get_secCounter(), buf));
-  			sprintf(buf+strlen(buf), "\n\nvolt : %.3f", dataADC);
-  			ssd1306_text_xy(buf, col, 2);
-  		}
-  	}
+	  if (!i2cError) {
+		  char buf[64];
+		  uint8_t col = ssd1306_calcx(sec_to_str_time(get_secCounter(), buf));
+		  sprintf(buf+strlen(buf), "\n\nvolt : %.3f", dataADC);
+		  ssd1306_text_xy(buf, col, 2);
+	  }
+  }
   /* USER CODE END Callback 1 */
 }
 
