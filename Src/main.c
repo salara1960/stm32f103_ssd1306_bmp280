@@ -52,7 +52,8 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 //const char *ver = "ver. 1.6";//06.04.2019 used TIM2 (1 sec. period) with interrupt
 //const char *ver = "ver. 1.7";//07.04.2019 used ADC1 with interrupt for measure the supply voltage
 //const char *ver = "ver. 1.8";//09.04.2019 used DMA for trasmit data to usart1 (500000 8N1)
-const char *ver = "ver. 1.9";//10.04.2019 used interrupt for receive data from uart1 (echo mode)
+//const char *ver = "ver. 1.9";//10.04.2019 used interrupt for receive data from uart1 (echo mode)
+const char *ver = "ver. 2.0";//11.04.2019 set date in RTC from GMT epoch time using uart1 (for example : date=1554977111)
 
 /* USER CODE END PD */
 
@@ -84,6 +85,7 @@ volatile static float dataADC = 0.0;
 
 const char *_extDate = "date=";
 volatile static uint32_t extDate = 0;
+static bool setDate = false;
 static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
 volatile uint8_t uRxByte = 0;
@@ -574,6 +576,32 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 //-----------------------------------------------------------------------------
+
+//-----------------------------------------------------------------------------
+void set_Date(time_t epoch)
+{
+RTC_TimeTypeDef sTime;
+RTC_DateTypeDef sDate;
+struct tm ts;
+
+	gmtime_r(&epoch, &ts);
+
+	sDate.WeekDay = ts.tm_wday;
+	sDate.Month = ts.tm_mon + 1;
+	sDate.Date = ts.tm_mday;
+	sDate.Year = ts.tm_year;
+	if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
+	else {
+		sTime.Hours = ts.tm_hour;
+		sTime.Minutes = ts.tm_min;
+		sTime.Seconds = ts.tm_sec;
+		if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
+		else {
+			setDate = true;
+		}
+	}
+}
+//-----------------------------------------------------------------------------
 int sec_to_str_time(uint32_t sec, char *stx)
 {
 uint32_t s = sec;
@@ -603,19 +631,29 @@ void inc_secCounter()
 //  if (return pointer != NULL) you must free this pointer after used
 char *sec_to_string(uint32_t sec)
 {
-	char *stx = (char *)calloc(1, 16);
+	char *stx = (char *)calloc(1, 32);
 	if (stx) {
-		uint32_t s = sec;
-		uint32_t day = s / (60 * 60 * 24);
-		s %= (60 * 60 * 24);
-
-		uint32_t hour = s / (60 * 60);
-		s %= (60 * 60);
-
-		uint32_t min = s / (60);
-		s %= 60;
-
-		sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, s);
+		if (!setDate) {//no valid date in RTC
+			uint32_t day = sec / (60 * 60 * 24);
+			sec %= (60 * 60 * 24);
+			uint32_t hour = sec / (60 * 60);
+			sec %= (60 * 60);
+			uint32_t min = sec / (60);
+			sec %= 60;
+			sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, sec);
+		} else {//in RTC valid date (epoch time)
+			RTC_TimeTypeDef sTime;
+			RTC_DateTypeDef sDate;
+			if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
+			else {
+				if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
+				else {
+					sprintf(stx,"%04u.%02u.%02u %02u:%02u:%02u",
+							sDate.Year + 1900, sDate.Month, sDate.Date,
+							sTime.Hours, sTime.Minutes, sTime.Seconds);
+				}
+			}
+		}
 	}
 
     return stx;
@@ -631,12 +669,15 @@ void Report(const char *txt, bool addCRLF, bool addTime)
 
 	uint16_t len = strlen(txt);
 	if (addCRLF) len += 2;
-	if (addTime) len += 16;
+	if (addTime) len += 32;
 	char *buf = (char *)calloc(1, len + 1);//get buffer for data in heap memory
 	if (!buf) return;
 
 	if (addTime) {
-		char *stime = sec_to_string(get_secCounter());
+		uint32_t ep;
+		if (!setDate) ep = get_secCounter();
+				 else ep = extDate;
+		char *stime = sec_to_string(ep);
 		if (stime) {
 			strcpy(buf, stime);
 			strcat(buf, " | ");
@@ -709,10 +750,18 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		RxBuf[rx_uk & 0xff] = (char)uRxByte;
 		if ((uRxByte == 0x0a) || (uRxByte == 0x0d)) {//end of line
 			char *uk = strstr(RxBuf, _extDate);//const char *_extDate = "date=";
-			extDate = atoi(uk + strlen(_extDate));
-			if (uk) sprintf(RxBuf, "%s:%lu\r\n", _extDate, extDate);
+			if (uk) {
+				uk += strlen(_extDate);
+				if (*uk != '?') {
+					if (strlen(uk) < 10) setDate = false;
+					else {
+						extDate = atoi(uk);
+						sprintf(RxBuf, "%s:%lu\r\n", _extDate, extDate);
+						set_Date((time_t)extDate);
+					}
+				} else setDate = true;
+			}
 			Report(RxBuf, false, false);
-
 			memset(RxBuf, 0, MAX_UART_BUF);
 			rx_uk = 0;
 		} else rx_uk++;
