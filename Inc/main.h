@@ -45,6 +45,13 @@ extern "C" {
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+typedef enum {
+	ZERO_DOWN = 0,
+	ZERO_UP,
+	COLOR_ALL,
+	COLOR_ONE_DOWN,
+	COLOR_ONE_UP
+} dir_mode_t;
 
 /* USER CODE END ET */
 
@@ -53,22 +60,30 @@ extern "C" {
 
 I2C_HandleTypeDef hi2c2;
 UART_HandleTypeDef huart1;
+TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim1;
 
 HAL_StatusTypeDef i2cError;
 
 const uint32_t min_wait_ms;
 const uint32_t max_wait_ms;
 
+uint8_t HalfsecCounter;
+
+uint8_t GoTxDMA;
+
 /* USER CODE END EC */
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 
-//#define wait_tick_def 1000
-#define wait_sensor_def 10
+#define wait_sensor_def 10 // 1 * 10 = 10 sec
 #define MAX_UART_BUF 256
+#define DEF_COLOR 64
 
 /* USER CODE END EM */
+
+void HAL_TIM_MspPostInit(TIM_HandleTypeDef *htim);
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
@@ -76,16 +91,25 @@ void Error_Handler(void);
 /* USER CODE BEGIN EFP */
 
 int sec_to_str_time(uint32_t sec, char *stx);
+
 void inc_secCounter();
 uint32_t get_secCounter();
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
+/*
+void inc_hsCounter();
+uint64_t get_hsCounter();
+uint64_t get_hstmr(uint64_t hs);
+bool check_hstmr(uint64_t hs);
+*/
 void Report(const char *txt, bool addCRLF, bool addTime);
 void errLedOn(const char *from);
 
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define PWM_Pin GPIO_PIN_1
+#define PWM_GPIO_Port GPIOA
 #define LED1_Pin GPIO_PIN_0
 #define LED1_GPIO_Port GPIOB
 #define SCL_Pin GPIO_PIN_10
@@ -101,8 +125,18 @@ void errLedOn(const char *from);
 /* USER CODE BEGIN Private defines */
 
 #define LED_ERROR GPIO_PIN_12
-
-
+/*
+#define _500ms 1
+#define _1s 2
+#define _1_5s 3
+#define _2s _1s*2
+#define _3s _1s*3
+#define _4s _1s*4
+#define _5s _1s*5
+#define _10s _1s*10
+#define _20s _1s*20
+#define _30s _1s*30
+*/
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

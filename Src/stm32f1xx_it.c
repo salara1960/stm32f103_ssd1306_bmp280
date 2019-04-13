@@ -59,12 +59,15 @@
 /* External variables --------------------------------------------------------*/
 extern ADC_HandleTypeDef hadc1;
 extern RTC_HandleTypeDef hrtc;
+extern DMA_HandleTypeDef hdma_tim2_ch2_ch4;
+extern TIM_HandleTypeDef htim1;
 extern TIM_HandleTypeDef htim2;
 extern DMA_HandleTypeDef hdma_usart1_tx;
 extern UART_HandleTypeDef huart1;
 extern TIM_HandleTypeDef htim4;
 
 /* USER CODE BEGIN EV */
+
 
 /* USER CODE END EV */
 
@@ -211,6 +214,12 @@ void RTC_IRQHandler(void)
 {
   /* USER CODE BEGIN RTC_IRQn 0 */
 	//HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
+	//if (get_hsCounter() & 1) {
+	//	inc_secCounter();
+	//	HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
+	//}
+	//inc_hsCounter();
+
   /* USER CODE END RTC_IRQn 0 */
   HAL_RTCEx_RTCIRQHandler(&hrtc);
   /* USER CODE BEGIN RTC_IRQn 1 */
@@ -233,6 +242,20 @@ void DMA1_Channel4_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles DMA1 channel7 global interrupt.
+  */
+void DMA1_Channel7_IRQHandler(void)
+{
+  /* USER CODE BEGIN DMA1_Channel7_IRQn 0 */
+  HAL_TIM_PWM_Stop_DMA(&htim2, TIM_CHANNEL_2);
+  /* USER CODE END DMA1_Channel7_IRQn 0 */
+  HAL_DMA_IRQHandler(&hdma_tim2_ch2_ch4);
+  /* USER CODE BEGIN DMA1_Channel7_IRQn 1 */
+  GoTxDMA = 0;
+  /* USER CODE END DMA1_Channel7_IRQn 1 */
+}
+
+/**
   * @brief This function handles ADC1 and ADC2 global interrupts.
   */
 void ADC1_2_IRQHandler(void)
@@ -247,14 +270,25 @@ void ADC1_2_IRQHandler(void)
 }
 
 /**
+  * @brief This function handles TIM1 update interrupt.
+  */
+void TIM1_UP_IRQHandler(void)
+{
+  /* USER CODE BEGIN TIM1_UP_IRQn 0 */
+
+  /* USER CODE END TIM1_UP_IRQn 0 */
+  HAL_TIM_IRQHandler(&htim1);
+  /* USER CODE BEGIN TIM1_UP_IRQn 1 */
+
+  /* USER CODE END TIM1_UP_IRQn 1 */
+}
+
+/**
   * @brief This function handles TIM2 global interrupt.
   */
 void TIM2_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM2_IRQn 0 */
-
-	inc_secCounter();
-	HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
 
   /* USER CODE END TIM2_IRQn 0 */
   HAL_TIM_IRQHandler(&htim2);

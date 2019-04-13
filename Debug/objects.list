@@ -24,4 +24,5 @@
 "Src/stm32f1xx_it.o"
 "Src/syscalls.o"
 "Src/system_stm32f1xx.o"
+"Src/ws2812.o"
 "startup/startup_stm32f103xb.o"

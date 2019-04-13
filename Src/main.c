@@ -25,9 +25,9 @@
 /* USER CODE BEGIN Includes */
 #include "ssd1306.h"
 #include "bmp280.h"
+#include "ws2812.h"
 
 #include "stm32f1xx_hal.h"
-//#include "stm32f1xx_hal_uart.h"
 /*
 post-build steps command:
 arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.bin" && ls -la | grep "${BuildArtifactFileBaseName}.*"
@@ -53,7 +53,9 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 //const char *ver = "ver. 1.7";//07.04.2019 used ADC1 with interrupt for measure the supply voltage
 //const char *ver = "ver. 1.8";//09.04.2019 used DMA for trasmit data to usart1 (500000 8N1)
 //const char *ver = "ver. 1.9";//10.04.2019 used interrupt for receive data from uart1 (echo mode)
-const char *ver = "ver. 2.0";//11.04.2019 set date in RTC from GMT epoch time using uart1 (for example : date=1554977111)
+//const char *ver = "ver. 2.0";//11.04.2019 set date in RTC from GMT epoch time using uart1 (for example : date=1554977111)
+const char *ver = "ver. 2.1";//11.04.2019 add WS2812 (used tim2 with dma1_channel7 -> pin PA1)
+
 
 /* USER CODE END PD */
 
@@ -69,7 +71,9 @@ I2C_HandleTypeDef hi2c2;
 
 RTC_HandleTypeDef hrtc;
 
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
+DMA_HandleTypeDef hdma_tim2_ch2_ch4;
 
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_tx;
@@ -81,6 +85,7 @@ const uint32_t min_wait_ms = 350;
 const uint32_t max_wait_ms = 1000;
 result_t sensors = {0.0, 0.0, 0.0};
 volatile static uint32_t secCounter = 0;
+volatile static uint64_t QuartaSecCounter = 0;
 volatile static float dataADC = 0.0;
 
 const char *_extDate = "date=";
@@ -90,6 +95,20 @@ static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
 volatile uint8_t uRxByte = 0;
 //static uint32_t TxLine = 0;
+
+uint8_t GoTxDMA = 0;
+
+const rgb_t ws2812_const[] =
+{
+RGB_SET(L64,   0,   0),
+RGB_SET(0,   L64,   0),
+RGB_SET(0,     0, L64),
+RGB_SET(L64, L64,   0),
+RGB_SET(0,   L64, L64),
+RGB_SET(L64,   0, L64),
+RGB_SET(L64, L64, L64),
+RGB_SET(L32,   0,   0)
+};
 
 
 /* USER CODE END PV */
@@ -103,6 +122,7 @@ static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_RTC_Init(void);
+static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
 
 uint32_t get_secCounter();
@@ -111,6 +131,10 @@ void Report(const char *txt, bool addCRLF, bool addTime);
 void errLedOn(const char *from);
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
+
+uint64_t get_hstmr(uint64_t sec);
+bool check_hstmr(uint64_t sec);
+
 
 /* USER CODE END PFP */
 
@@ -153,13 +177,15 @@ int main(void)
   MX_TIM2_Init();
   MX_ADC1_Init();
   MX_RTC_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
+
 
     HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
 
-    // start timer2 + interrupt
-    HAL_TIM_Base_Start(&htim2);
-    HAL_TIM_Base_Start_IT(&htim2);
+    // start timer1 + interrupt
+    HAL_TIM_Base_Start(&htim1);
+    HAL_TIM_Base_Start_IT(&htim1);
     //start ADC1 + interrupt
     HAL_ADC_Start_IT(&hadc1);
     //"start" rx_interrupt
@@ -198,17 +224,75 @@ int main(void)
     int32_t temp, pres, humi = 0;
     char sensorType[32] = {0};
 
+    //for WS2812 : tim2_channel2 + dma1_channel7
+    uint8_t scenaINDEX = 1;//ZERO_DOWN;
+    bool new_scena = false;
+    const dir_mode_t scena[] =
+    {
+    	COLOR_ALL,
+    	ZERO_DOWN,
+    	COLOR_ALL,
+    	ZERO_UP
+    };
+    const uint8_t maxSCENA = sizeof(scena);
+
+    uint8_t cnt_off_led = LEN_12;
+    dir_mode_t ledMode = scena[scenaINDEX];
+    volatile static rgb_t ws2812_arr[LEN_12];
+    memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(ws2812_arr));
+    ws2812_init();
+    ws2812_setData((void *)&ws2812_arr);
+    ws2812_start();
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-    uint32_t wait_sensor = get_tmr(2);//set wait time to 1 sec.
+    uint32_t wait_sensor = get_tmr(2);//set wait time to 2 sec.
+
+    uint64_t wait_pwm = get_hstmr(2);//1 sec
 
   while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+	  	if (check_hstmr(wait_pwm) && !GoTxDMA) {
+	  		switch (ledMode) {
+	  			case ZERO_DOWN :
+	  				if (cnt_off_led) {
+	  					ws2812_arr[cnt_off_led - 1] = RGB_SET(0,0,0);
+	  					cnt_off_led--;
+	  				} else {
+	  					memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(ws2812_arr));
+	  					new_scena = true;
+	  				}
+	  			break;
+	  			case ZERO_UP :
+	  				if (cnt_off_led < LEN_12) {
+	  					ws2812_arr[cnt_off_led] = RGB_SET(0,0,0);
+	  					cnt_off_led++;
+	  				} else {
+	  					memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(ws2812_arr));
+	  					new_scena = true;
+	  				}
+	  			break;
+	  			case COLOR_ALL :
+	  				memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(ws2812_arr));
+	  				new_scena = true;
+	  			break;
+	  		}
+	  		if (new_scena) {
+	  			new_scena = false;
+	  			scenaINDEX++; if (scenaINDEX >= maxSCENA) scenaINDEX = 0;
+	  			ledMode = scena[scenaINDEX];
+	  		}
+	  		ws2812_setData((void *)&ws2812_arr);
+	  		ws2812_start();
+	  		wait_pwm = get_hstmr(1);//0.5 sec
+	  	}
 
     	HAL_Delay(10);
 
@@ -283,7 +367,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL8;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -294,7 +378,7 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV16;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV8;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
@@ -447,6 +531,53 @@ static void MX_RTC_Init(void)
 }
 
 /**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+	secCounter = 0;
+	QuartaSecCounter = 0;
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 17999;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 499;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -455,20 +586,20 @@ static void MX_TIM2_Init(void)
 {
 
   /* USER CODE BEGIN TIM2_Init 0 */
-	secCounter = 0;
+
   /* USER CODE END TIM2_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_SlaveConfigTypeDef sSlaveConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM2_Init 1 */
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 8000;
+  htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1000;
+  htim2.Init.Period = 89;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
@@ -480,21 +611,28 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  sSlaveConfig.SlaveMode = TIM_SLAVEMODE_TRIGGER;
-  sSlaveConfig.InputTrigger = TIM_TS_ITR1;
-  if (HAL_TIM_SlaveConfigSynchronization(&htim2, &sSlaveConfig) != HAL_OK)
+  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
   {
     Error_Handler();
   }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
   sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
   if (HAL_TIMEx_MasterConfigSynchronization(&htim2, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
   }
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
+  HAL_TIM_MspPostInit(&htim2);
 
 }
 
@@ -515,7 +653,7 @@ static void MX_USART1_UART_Init(void)
 
   /* USER CODE END USART1_Init 1 */
   huart1.Instance = USART1;
-  huart1.Init.BaudRate = 500000;//115200;
+  huart1.Init.BaudRate = 500000;
   huart1.Init.WordLength = UART_WORDLENGTH_8B;
   huart1.Init.StopBits = UART_STOPBITS_1;
   huart1.Init.Parity = UART_PARITY_NONE;
@@ -544,6 +682,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 3, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+  /* DMA1_Channel7_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
 
 }
 
@@ -626,6 +767,16 @@ uint32_t get_secCounter()
 void inc_secCounter()
 {
 	secCounter++;
+}
+//-----------------------------------------------------------------------------
+uint64_t get_hsCounter()
+{
+	return QuartaSecCounter;
+}
+//-----------------------------------------------------------------------------
+void inc_hsCounter()
+{
+	QuartaSecCounter++;
 }
 //----------------------------------------------------------------------------------------
 //  if (return pointer != NULL) you must free this pointer after used
@@ -725,6 +876,16 @@ bool check_tmr(uint32_t sec)
 	return (get_secCounter() >= sec ? true : false);
 }
 //------------------------------------------------------------------------------------------
+uint64_t get_hstmr(uint64_t hs)
+{
+	return (get_hsCounter() + hs);
+}
+//------------------------------------------------------------------------------------------
+bool check_hstmr(uint64_t hs)
+{
+	return (get_hsCounter() >= hs ? true : false);
+}
+//------------------------------------------------------------------------------------------
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
 	if (hadc->Instance == ADC1) {
@@ -740,6 +901,22 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 		char stx[16];
 		ssd1306_calcx(sprintf(stx, "- %lu -", TxLine));
 		ssd1306_text_xy(stx, ssd1306_calcx(sprintf(stx, "- %lu -", TxLine)), 1);
+	}
+}
+*/
+//------------------------------------------------------------------------------------------
+/*
+void HAL_RTCEx_RTCEventCallback(RTC_HandleTypeDef *hrtc)
+{
+	if (hrtc->Instance == RTC) {
+		inc_secCounter();
+		HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
+		if (!i2cError) {
+			char buf[64];
+			uint8_t col = ssd1306_calcx(sec_to_str_time(get_secCounter(), buf));
+			sprintf(buf+strlen(buf), "\n\nvolt : %.3f", dataADC);
+			ssd1306_text_xy(buf, col, 2);
+		}
 	}
 }
 */
@@ -790,13 +967,19 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-  if (htim->Instance == TIM2) {
-	  if (!i2cError) {
-		  char buf[64];
-		  uint8_t col = ssd1306_calcx(sec_to_str_time(get_secCounter(), buf));
-		  sprintf(buf+strlen(buf), "\n\nvolt : %.3f", dataADC);
-		  ssd1306_text_xy(buf, col, 2);
+  if (htim->Instance == TIM1) {
+	  if (get_hsCounter() & 1) {
+		  inc_secCounter();
+		  HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
+
+		  if (!i2cError) {
+			  char buf[64];
+			  uint8_t col = ssd1306_calcx(sec_to_str_time(get_secCounter(), buf));
+			  sprintf(buf+strlen(buf), "\n\nvolt : %.3f", dataADC);
+			  ssd1306_text_xy(buf, col, 2);
+		  }
 	  }
+	  inc_hsCounter();
   }
   /* USER CODE END Callback 1 */
 }
