@@ -27,7 +27,6 @@
 #include "bmp280.h"
 #include "ws2812.h"
 
-#include "stm32f1xx_hal.h"
 /*
 post-build steps command:
 arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.bin" && ls -la | grep "${BuildArtifactFileBaseName}.*"
@@ -54,7 +53,8 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 //const char *ver = "ver. 1.8";//09.04.2019 used DMA for trasmit data to usart1 (500000 8N1)
 //const char *ver = "ver. 1.9";//10.04.2019 used interrupt for receive data from uart1 (echo mode)
 //const char *ver = "ver. 2.0";//11.04.2019 set date in RTC from GMT epoch time using uart1 (for example : date=1554977111)
-const char *ver = "ver. 2.1";//11.04.2019 add WS2812 (used tim2 with dma1_channel7 -> pin PA1)
+//const char *ver = "ver. 2.1";//13.04.2019 add WS2812 (used tim2 with dma1_channel7 -> pin PA1)
+const char *ver = "ver. 2.2";//14.04.2019 minor changes in scena[] of ws2812
 
 
 /* USER CODE END PD */
@@ -85,7 +85,7 @@ const uint32_t min_wait_ms = 350;
 const uint32_t max_wait_ms = 1000;
 result_t sensors = {0.0, 0.0, 0.0};
 volatile static uint32_t secCounter = 0;
-volatile static uint64_t QuartaSecCounter = 0;
+volatile static uint64_t HalfSecCounter = 0;
 volatile static float dataADC = 0.0;
 
 const char *_extDate = "date=";
@@ -94,22 +94,27 @@ static bool setDate = false;
 static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
 volatile uint8_t uRxByte = 0;
-//static uint32_t TxLine = 0;
 
 uint8_t GoTxDMA = 0;
 
-const rgb_t ws2812_const[] =
-{
-RGB_SET(L64,   0,   0),
-RGB_SET(0,   L64,   0),
-RGB_SET(0,     0, L64),
-RGB_SET(L64, L64,   0),
-RGB_SET(0,   L64, L64),
-RGB_SET(L64,   0, L64),
-RGB_SET(L64, L64, L64),
-RGB_SET(L32,   0,   0)
+const rgb_t ws2812_const[LEN_12] = {
+	RGB_SET(L64,   0,   0),
+	RGB_SET(0,   L64,   0),
+	RGB_SET(0,     0, L64),
+	RGB_SET(L64, L64,   0),
+	RGB_SET(0,   L64, L64),
+	RGB_SET(L64,   0, L64),
+	RGB_SET(L64, L64, L64),
+	RGB_SET(L32,   0,   0)
 };
-
+const dir_mode_t scena[] = {
+   	ZERO_ALL_DOWN,
+   	COLOR_DOWN,
+	ZERO_UP,
+	COLOR_ALL_DOWN,
+	ZERO_DOWN,
+	COLOR_UP
+};
 
 /* USER CODE END PV */
 
@@ -199,8 +204,10 @@ int main(void)
     	if (!i2cError) {
     		ssd1306_pattern();//set any params for screen
     		if (!i2cError) {
-    			//ssd1306_invert();//set inverse color mode
-    			//if (!i2cError)
+#ifdef SET_SSD1306_INVERT
+    			ssd1306_invert();//set inverse color mode
+    			if (!i2cError)
+#endif
     				ssd1306_clear();//clear screen
     		}
     	}
@@ -225,25 +232,15 @@ int main(void)
     char sensorType[32] = {0};
 
     //for WS2812 : tim2_channel2 + dma1_channel7
-    uint8_t scenaINDEX = 1;//ZERO_DOWN;
+    uint8_t scenaINDEX = 0;
     bool new_scena = false;
-    const dir_mode_t scena[] =
-    {
-    	COLOR_ALL,
-    	ZERO_DOWN,
-    	COLOR_ALL,
-    	ZERO_UP
-    };
+    bool proc = true;
     const uint8_t maxSCENA = sizeof(scena);
-
     uint8_t cnt_off_led = LEN_12;
     dir_mode_t ledMode = scena[scenaINDEX];
-    volatile static rgb_t ws2812_arr[LEN_12];
-    memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(ws2812_arr));
-    ws2812_init();
-    ws2812_setData((void *)&ws2812_arr);
-    ws2812_start();
+    static rgb_t ws2812_arr[LEN_12];
 
+    ws2812_init();
 
   /* USER CODE END 2 */
 
@@ -262,26 +259,42 @@ int main(void)
 	  	if (check_hstmr(wait_pwm) && !GoTxDMA) {
 	  		switch (ledMode) {
 	  			case ZERO_DOWN :
+	  			case COLOR_DOWN :
 	  				if (cnt_off_led) {
-	  					ws2812_arr[cnt_off_led - 1] = RGB_SET(0,0,0);
+	  					if (ledMode == ZERO_DOWN) ws2812_arr[cnt_off_led - 1] = RGB_SET(0,0,0);
+	  										 else ws2812_arr[cnt_off_led - 1] = ws2812_const[cnt_off_led - 1];
 	  					cnt_off_led--;
+	  					proc = true;
 	  				} else {
-	  					memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(ws2812_arr));
+	  					proc = false;
 	  					new_scena = true;
 	  				}
 	  			break;
 	  			case ZERO_UP :
+	  			case COLOR_UP :
 	  				if (cnt_off_led < LEN_12) {
-	  					ws2812_arr[cnt_off_led] = RGB_SET(0,0,0);
+	  					if (ledMode == ZERO_UP) ws2812_arr[cnt_off_led] = RGB_SET(0,0,0);
+	  									   else ws2812_arr[cnt_off_led] = ws2812_const[cnt_off_led];
 	  					cnt_off_led++;
+	  					proc = true;
 	  				} else {
-	  					memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(ws2812_arr));
+	  					proc = false;
 	  					new_scena = true;
 	  				}
 	  			break;
-	  			case COLOR_ALL :
-	  				memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(ws2812_arr));
-	  				new_scena = true;
+	  			case ZERO_ALL_DOWN :
+	  			case ZERO_ALL_UP :
+	  				if (ledMode == ZERO_ALL_DOWN) cnt_off_led = LEN_12;
+	  										 else cnt_off_led = 0;
+	  				memset((uint8_t *)&ws2812_arr, 0, sizeof(rgb_t)*LEN_12);
+	  				new_scena = proc = true;
+	  			break;
+	  			case COLOR_ALL_DOWN :
+	  			case COLOR_ALL_UP :
+	  				if (ledMode == COLOR_ALL_DOWN) cnt_off_led = LEN_12;
+	  										  else cnt_off_led = 0;
+	  				memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(rgb_t)*LEN_12);
+	  				new_scena = proc = true;
 	  			break;
 	  		}
 	  		if (new_scena) {
@@ -289,12 +302,14 @@ int main(void)
 	  			scenaINDEX++; if (scenaINDEX >= maxSCENA) scenaINDEX = 0;
 	  			ledMode = scena[scenaINDEX];
 	  		}
-	  		ws2812_setData((void *)&ws2812_arr);
-	  		ws2812_start();
-	  		wait_pwm = get_hstmr(1);//0.5 sec
+	  		if (proc) {
+	  			ws2812_setData((void *)&ws2812_arr);
+	  			ws2812_start();
+	  			wait_pwm = get_hstmr(1);//0.5 sec
+	  		}
 	  	}
 
-    	HAL_Delay(10);
+    	HAL_Delay(1);
 
     	//------------------------------------------------------------------------
 
@@ -540,7 +555,7 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE BEGIN TIM1_Init 0 */
 	secCounter = 0;
-	QuartaSecCounter = 0;
+	HalfSecCounter = 0;
   /* USER CODE END TIM1_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
@@ -771,12 +786,12 @@ void inc_secCounter()
 //-----------------------------------------------------------------------------
 uint64_t get_hsCounter()
 {
-	return QuartaSecCounter;
+	return HalfSecCounter;
 }
 //-----------------------------------------------------------------------------
 void inc_hsCounter()
 {
-	QuartaSecCounter++;
+	HalfSecCounter++;
 }
 //----------------------------------------------------------------------------------------
 //  if (return pointer != NULL) you must free this pointer after used
@@ -892,34 +907,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 		dataADC = ((float)HAL_ADC_GetValue(hadc)) * 3.3 / 4096;
 	}
 }
-//------------------------------------------------------------------------------------------
-/*
-void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
-{
-	if (huart->Instance == USART1) {
-		TxLine++;
-		char stx[16];
-		ssd1306_calcx(sprintf(stx, "- %lu -", TxLine));
-		ssd1306_text_xy(stx, ssd1306_calcx(sprintf(stx, "- %lu -", TxLine)), 1);
-	}
-}
-*/
-//------------------------------------------------------------------------------------------
-/*
-void HAL_RTCEx_RTCEventCallback(RTC_HandleTypeDef *hrtc)
-{
-	if (hrtc->Instance == RTC) {
-		inc_secCounter();
-		HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
-		if (!i2cError) {
-			char buf[64];
-			uint8_t col = ssd1306_calcx(sec_to_str_time(get_secCounter(), buf));
-			sprintf(buf+strlen(buf), "\n\nvolt : %.3f", dataADC);
-			ssd1306_text_xy(buf, col, 2);
-		}
-	}
-}
-*/
 //------------------------------------------------------------------------------------------
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {

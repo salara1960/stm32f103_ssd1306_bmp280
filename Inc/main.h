@@ -48,9 +48,12 @@ extern "C" {
 typedef enum {
 	ZERO_DOWN = 0,
 	ZERO_UP,
-	COLOR_ALL,
-	COLOR_ONE_DOWN,
-	COLOR_ONE_UP
+	COLOR_ALL_UP,
+	COLOR_ALL_DOWN,
+	COLOR_DOWN,
+	COLOR_UP,
+	ZERO_ALL_UP,
+	ZERO_ALL_DOWN
 } dir_mode_t;
 
 /* USER CODE END ET */
@@ -96,12 +99,7 @@ void inc_secCounter();
 uint32_t get_secCounter();
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
-/*
-void inc_hsCounter();
-uint64_t get_hsCounter();
-uint64_t get_hstmr(uint64_t hs);
-bool check_hstmr(uint64_t hs);
-*/
+
 void Report(const char *txt, bool addCRLF, bool addTime);
 void errLedOn(const char *from);
 
@@ -124,19 +122,10 @@ void errLedOn(const char *from);
 #define RXD_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
+#undef SET_SSD1306_INVERT
+
 #define LED_ERROR GPIO_PIN_12
-/*
-#define _500ms 1
-#define _1s 2
-#define _1_5s 3
-#define _2s _1s*2
-#define _3s _1s*3
-#define _4s _1s*4
-#define _5s _1s*5
-#define _10s _1s*10
-#define _20s _1s*20
-#define _30s _1s*30
-*/
+
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus

@@ -47,7 +47,9 @@
 
 void ssd1306_on(bool flag);
 void ssd1306_init();
-void ssd1306_invert();
+#ifdef SET_SSD1306_INVERT
+	void ssd1306_invert();
+#endif
 void ssd1306_clear();
 void ssd1306_pattern();
 void ssd1306_contrast(uint8_t value);

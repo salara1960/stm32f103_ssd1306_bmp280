@@ -172,6 +172,7 @@ uint8_t dat[] = {
 
 }
 //-----------------------------------------------------------------------------------------
+#ifdef SET_SSD1306_INVERT
 void ssd1306_invert()
 {
 uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0};
@@ -183,6 +184,7 @@ uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0};
     if ((i2cError = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms)) != HAL_OK) errLedOn(__func__);
 
 }
+#endif
 //-----------------------------------------------------------------------------------------
 void ssd1306_clear()
 {

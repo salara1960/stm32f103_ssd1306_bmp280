@@ -213,12 +213,6 @@ void SysTick_Handler(void)
 void RTC_IRQHandler(void)
 {
   /* USER CODE BEGIN RTC_IRQn 0 */
-	//HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
-	//if (get_hsCounter() & 1) {
-	//	inc_secCounter();
-	//	HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
-	//}
-	//inc_hsCounter();
 
   /* USER CODE END RTC_IRQn 0 */
   HAL_RTCEx_RTCIRQHandler(&hrtc);
