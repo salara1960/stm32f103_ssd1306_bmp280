@@ -21,7 +21,7 @@ typedef struct {
 #pragma pack(pop)
 //--------------------------------------------------
 
-#define DELAY_LEN 0//48
+#define DELAY_LEN 48
 #define LED_COUNT 8//144
 #define ARRAY_LEN DELAY_LEN + (LED_COUNT * 24)// 0 + 8 * 24 = 0 + 192 = 192
 #define HIGH 65

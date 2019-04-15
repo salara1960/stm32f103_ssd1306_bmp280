@@ -110,10 +110,10 @@ const rgb_t ws2812_const[LED_COUNT] = {
 };
 const dir_mode_t scena[] = {
    	ZERO_ALL,
+	RAINBOW,
    	COLOR_DOWN,
 	COLOR_UP,
 	WHITE_DOWN,
-	RAINBOW,
 	ZERO_ALL
 };
 
@@ -246,10 +246,8 @@ int main(void)
     const uint8_t anim_step = 10;
     const uint8_t anim_max = 150;
     const uint32_t cntMode_def = 250;
-    rgb_t color1 = RGB_SET(anim_max,0,0);
-    rgb_t color2 = RGB_SET(anim_max,0,0);
-    uint8_t step1 = 0, step2 = 0;
-    uint8_t shift = 0, c_max = anim_max, c_min = 0;
+    rgb_t color1, color2;
+    uint8_t step1 = 0, step2 = 0, shift = 0, c_max = anim_max, c_min = 0, ind;
     uint32_t msec = 10, cntMode = cntMode_def;
     bool line_first = true;
 
@@ -260,7 +258,7 @@ int main(void)
 
     uint32_t wait_sensor = get_tmr(2);//set wait time to 2 sec.
 
-    uint64_t wait_pwm = get_hstmr(4);//2 sec
+    uint64_t wait_pwm = get_hstmr(2);//1 sec
 
   while (1) {
     /* USER CODE END WHILE */
@@ -272,16 +270,15 @@ int main(void)
 	  		switch (ledMode) {
 	  			case RAINBOW :
 	  				if (line_first) {
-	  					color1 = RGB_SET(anim_max,0,0);
-	  					color2 = RGB_SET(anim_max,0,0);
-	  					step1 = 0, step2 = 0;
+	  					color1 = color2 = RGB_SET(anim_max, 0, 0);
+	  					step1 = step2 = 0;
 	  					line_first = false;
 	  				}
 	  				color1 = color2;
 	  				step1 = step2;
-	  				for (uint8_t i = 0; i < LED_COUNT; i++) {
-	  					ws2812_arr[i] = color1;
-	  					if (i == 1) {
+	  				for (ind = 0; ind < LED_COUNT; ind++) {
+	  					ws2812_arr[ind] = color1;
+	  					if (ind == 1) {
 	  						color2 = color1;
 	  						step2 = step1;
 	  					}
@@ -342,9 +339,8 @@ int main(void)
 	  					line_first = false;
 	  				}
 	  				step1 = 0;
-	  				color1 = RGB_SET(0,0,0);
-	  				color2 = RGB_SET(0,0,0);
-	  				for (uint8_t i = 0; i < LED_COUNT; i++) {
+	  				color1 = color2 = RGB_SET(0,0,0);
+	  				for (ind = 0; ind < LED_COUNT; ind++) {
 	  					switch (step1) {
 	  						case 0:
 	  							color1.red = c_max;
@@ -377,10 +373,10 @@ int main(void)
 	  							step1 = 0;
 	  						break;
 	  					}
-	  					if (i == shift)
-	  						ws2812_arr[i] = color1;
+	  					if (ind == shift)
+	  						ws2812_arr[ind] = color1;
 	  					else
-	  						ws2812_arr[i] = color2;
+	  						ws2812_arr[ind] = color2;
 	  				}
 	  				if ((ledMode == COLOR_UP) || (ledMode == WHITE_UP)) {
 	  					shift++;
@@ -420,7 +416,7 @@ int main(void)
 	  			if ((ledMode == COLOR_ALL) || (ledMode == ZERO_ALL)) {
 	  				cntMode = cntMode_def;
 	  				line_first = true;
-	  				wait_pwm = get_hstmr(4);//2 sec
+	  				wait_pwm = get_hstmr(2);//1 sec
 	  			} else msec = 30;
 	  		}
 	  	}
