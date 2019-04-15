@@ -40,20 +40,19 @@ extern "C" {
 #include <math.h>
 
 #include "stm32f1xx_hal_uart.h"
-//#include "stm32f1xx_hal_rtc.h"
+
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 typedef enum {
-	ZERO_DOWN = 0,
-	ZERO_UP,
-	COLOR_ALL_UP,
-	COLOR_ALL_DOWN,
+	WHITE_DOWN = 0,
+	WHITE_UP,
 	COLOR_DOWN,
 	COLOR_UP,
-	ZERO_ALL_UP,
-	ZERO_ALL_DOWN
+	RAINBOW,
+	ZERO_ALL,
+	COLOR_ALL
 } dir_mode_t;
 
 /* USER CODE END ET */
@@ -82,7 +81,6 @@ uint8_t GoTxDMA;
 
 #define wait_sensor_def 10 // 1 * 10 = 10 sec
 #define MAX_UART_BUF 256
-#define DEF_COLOR 64
 
 /* USER CODE END EM */
 

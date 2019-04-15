@@ -54,7 +54,8 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 //const char *ver = "ver. 1.9";//10.04.2019 used interrupt for receive data from uart1 (echo mode)
 //const char *ver = "ver. 2.0";//11.04.2019 set date in RTC from GMT epoch time using uart1 (for example : date=1554977111)
 //const char *ver = "ver. 2.1";//13.04.2019 add WS2812 (used tim2 with dma1_channel7 -> pin PA1)
-const char *ver = "ver. 2.2";//14.04.2019 minor changes in scena[] of ws2812
+//const char *ver = "ver. 2.2";//14.04.2019 minor changes in scena[] of ws2812
+const char *ver = "ver. 2.3";//15.04.2019 minor changes : add new ledMode for ws2812 (RAINBOW, COLOR_UP/DOWN, WHITE_UP/DOWN)
 
 
 /* USER CODE END PD */
@@ -97,7 +98,7 @@ volatile uint8_t uRxByte = 0;
 
 uint8_t GoTxDMA = 0;
 
-const rgb_t ws2812_const[LEN_12] = {
+const rgb_t ws2812_const[LED_COUNT] = {
 	RGB_SET(L64,   0,   0),
 	RGB_SET(0,   L64,   0),
 	RGB_SET(0,     0, L64),
@@ -108,12 +109,12 @@ const rgb_t ws2812_const[LEN_12] = {
 	RGB_SET(L32,   0,   0)
 };
 const dir_mode_t scena[] = {
-   	ZERO_ALL_DOWN,
+   	ZERO_ALL,
    	COLOR_DOWN,
-	ZERO_UP,
-	COLOR_ALL_DOWN,
-	ZERO_DOWN,
-	COLOR_UP
+	COLOR_UP,
+	WHITE_DOWN,
+	RAINBOW,
+	ZERO_ALL
 };
 
 /* USER CODE END PV */
@@ -236,11 +237,21 @@ int main(void)
     bool new_scena = false;
     bool proc = true;
     const uint8_t maxSCENA = sizeof(scena);
-    uint8_t cnt_off_led = LEN_12;
     dir_mode_t ledMode = scena[scenaINDEX];
-    static rgb_t ws2812_arr[LEN_12];
+    static rgb_t ws2812_arr[LED_COUNT];
 
     ws2812_init();
+
+    //for ledMode : RAINBOW, WHITE_X, COLOR_X
+    const uint8_t anim_step = 10;
+    const uint8_t anim_max = 150;
+    const uint32_t cntMode_def = 250;
+    rgb_t color1 = RGB_SET(anim_max,0,0);
+    rgb_t color2 = RGB_SET(anim_max,0,0);
+    uint8_t step1 = 0, step2 = 0;
+    uint8_t shift = 0, c_max = anim_max, c_min = 0;
+    uint32_t msec = 10, cntMode = cntMode_def;
+    bool line_first = true;
 
   /* USER CODE END 2 */
 
@@ -249,7 +260,7 @@ int main(void)
 
     uint32_t wait_sensor = get_tmr(2);//set wait time to 2 sec.
 
-    uint64_t wait_pwm = get_hstmr(2);//1 sec
+    uint64_t wait_pwm = get_hstmr(4);//2 sec
 
   while (1) {
     /* USER CODE END WHILE */
@@ -257,43 +268,144 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 	  	if (check_hstmr(wait_pwm) && !GoTxDMA) {
+	  		msec = 10;
 	  		switch (ledMode) {
-	  			case ZERO_DOWN :
-	  			case COLOR_DOWN :
-	  				if (cnt_off_led) {
-	  					if (ledMode == ZERO_DOWN) ws2812_arr[cnt_off_led - 1] = RGB_SET(0,0,0);
-	  										 else ws2812_arr[cnt_off_led - 1] = ws2812_const[cnt_off_led - 1];
-	  					cnt_off_led--;
-	  					proc = true;
-	  				} else {
-	  					proc = false;
+	  			case RAINBOW :
+	  				if (line_first) {
+	  					color1 = RGB_SET(anim_max,0,0);
+	  					color2 = RGB_SET(anim_max,0,0);
+	  					step1 = 0, step2 = 0;
+	  					line_first = false;
+	  				}
+	  				color1 = color2;
+	  				step1 = step2;
+	  				for (uint8_t i = 0; i < LED_COUNT; i++) {
+	  					ws2812_arr[i] = color1;
+	  					if (i == 1) {
+	  						color2 = color1;
+	  						step2 = step1;
+	  					}
+	  					switch (step1) {
+	  						case 0:
+	  							color1.green += anim_step;
+	  							if (color1.green >= anim_max) step1++;
+	  						break;
+	  						case 1:
+	  							color1.red -= anim_step;
+	  							if (color1.red == 0) step1++;
+	  						break;
+	  						case 2:
+	  							color1.blue += anim_step;
+	  							if (color1.blue >= anim_max) step1++;
+	  						break;
+	  						case 3:
+	  							color1.green -= anim_step;
+	  							if (color1.green == 0) step1++;
+	  						break;
+	  						case 4:
+	  							color1.red += anim_step;
+	  							if (color1.red >= anim_max) step1++;
+	  						break;
+	  						case 5:
+	  							color1.blue -= anim_step;
+	  							if (color1.blue == 0) step1 = 0;
+	  						break;
+	  					}
+	  				}
+	  				proc = true;
+	  				new_scena = false;
+	  				cntMode--;
+	  				if (!cntMode) {
+	  					cntMode = cntMode_def;
 	  					new_scena = true;
+	  					line_first = true;
 	  				}
 	  			break;
-	  			case ZERO_UP :
 	  			case COLOR_UP :
-	  				if (cnt_off_led < LEN_12) {
-	  					if (ledMode == ZERO_UP) ws2812_arr[cnt_off_led] = RGB_SET(0,0,0);
-	  									   else ws2812_arr[cnt_off_led] = ws2812_const[cnt_off_led];
-	  					cnt_off_led++;
-	  					proc = true;
-	  				} else {
-	  					proc = false;
+	  			case COLOR_DOWN :
+	  			case WHITE_UP :
+	  			case WHITE_DOWN :
+	  				if (line_first) {
+	  					if (ledMode == COLOR_UP) {
+	  						shift = 0;
+	  						c_min = 0; c_max = anim_max;
+	  					} else if (ledMode == COLOR_DOWN) {
+	  						shift = LED_COUNT - 1;
+	  						c_min = 0; c_max = anim_max;
+	  					} else if (ledMode == WHITE_UP) {
+	  						shift = 0;
+	  						c_min = c_max = anim_max;
+	  					} else if (ledMode == WHITE_DOWN) {
+	  						shift = LED_COUNT - 1;
+	  						c_min = c_max = anim_max;
+	  					}
+	  					line_first = false;
+	  				}
+	  				step1 = 0;
+	  				color1 = RGB_SET(0,0,0);
+	  				color2 = RGB_SET(0,0,0);
+	  				for (uint8_t i = 0; i < LED_COUNT; i++) {
+	  					switch (step1) {
+	  						case 0:
+	  							color1.red = c_max;
+	  							color1.green = color1.blue = c_min;
+	  							step1++;
+	  						break;
+	  						case 1:
+	  							color1.green = c_max;
+	  							color1.red = color1.blue = c_min;
+	  							step1++;
+	  						break;
+	  						case 2:
+	  							color1.blue = c_max;
+	  							color1.red = color1.green = c_min;
+	  							step1++;
+	  						break;
+	  						case 3:
+	  							color1.red = color1.green = c_max;
+	  							color1.blue = c_min;
+	  							step1++;
+	  						break;
+	  						case 4:
+	  							color1.red = color1.blue = c_max;
+	  							color1.green = c_min;
+	  							step1++;
+	  						break;
+	  						case 5:
+	  							color1.green = color1.blue =  c_max;
+	  							color1.red = c_min;
+	  							step1 = 0;
+	  						break;
+	  					}
+	  					if (i == shift)
+	  						ws2812_arr[i] = color1;
+	  					else
+	  						ws2812_arr[i] = color2;
+	  				}
+	  				if ((ledMode == COLOR_UP) || (ledMode == WHITE_UP)) {
+	  					shift++;
+	  					if (shift >= LED_COUNT) shift = 0;
+	  				} else if ((ledMode == COLOR_DOWN) || (ledMode == WHITE_DOWN)) {
+	  					if (shift > 0)
+	  						shift--;
+	  					else
+	  						shift = LED_COUNT - 1;
+	  				}
+	  				proc = true;
+	  				new_scena = false;
+	  				cntMode--;
+	  				if (!cntMode) {
+	  					cntMode = cntMode_def;
 	  					new_scena = true;
+	  					line_first = true;
 	  				}
 	  			break;
-	  			case ZERO_ALL_DOWN :
-	  			case ZERO_ALL_UP :
-	  				if (ledMode == ZERO_ALL_DOWN) cnt_off_led = LEN_12;
-	  										 else cnt_off_led = 0;
-	  				memset((uint8_t *)&ws2812_arr, 0, sizeof(rgb_t)*LEN_12);
+	  			case ZERO_ALL :
+	  				memset((uint8_t *)&ws2812_arr, 0, sizeof(rgb_t)*LED_COUNT);
 	  				new_scena = proc = true;
 	  			break;
-	  			case COLOR_ALL_DOWN :
-	  			case COLOR_ALL_UP :
-	  				if (ledMode == COLOR_ALL_DOWN) cnt_off_led = LEN_12;
-	  										  else cnt_off_led = 0;
-	  				memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(rgb_t)*LEN_12);
+	  			case COLOR_ALL :
+	  				memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(rgb_t)*LED_COUNT);
 	  				new_scena = proc = true;
 	  			break;
 	  		}
@@ -305,11 +417,15 @@ int main(void)
 	  		if (proc) {
 	  			ws2812_setData((void *)&ws2812_arr);
 	  			ws2812_start();
-	  			wait_pwm = get_hstmr(1);//0.5 sec
+	  			if ((ledMode == COLOR_ALL) || (ledMode == ZERO_ALL)) {
+	  				cntMode = cntMode_def;
+	  				line_first = true;
+	  				wait_pwm = get_hstmr(4);//2 sec
+	  			} else msec = 30;
 	  		}
 	  	}
 
-    	HAL_Delay(1);
+    	HAL_Delay(msec);
 
     	//------------------------------------------------------------------------
 
@@ -554,8 +670,11 @@ static void MX_TIM1_Init(void)
 {
 
   /* USER CODE BEGIN TIM1_Init 0 */
-	secCounter = 0;
-	HalfSecCounter = 0;
+
+	//init counters
+	secCounter     = 0; //1 sec counter (32bit)
+	HalfSecCounter = 0; // 0.5 sec counter (64bit)
+
   /* USER CODE END TIM1_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
@@ -565,9 +684,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 17999;
+  htim1.Init.Prescaler = 18000 - 1;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 499;
+  htim1.Init.Period = 500 - 1;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -743,12 +862,12 @@ struct tm ts;
 	gmtime_r(&epoch, &ts);
 
 	sDate.WeekDay = ts.tm_wday;
-	sDate.Month = ts.tm_mon + 1;
-	sDate.Date = ts.tm_mday;
-	sDate.Year = ts.tm_year;
+	sDate.Month   = ts.tm_mon + 1;
+	sDate.Date    = ts.tm_mday;
+	sDate.Year    = ts.tm_year;
 	if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
 	else {
-		sTime.Hours = ts.tm_hour;
+		sTime.Hours   = ts.tm_hour;
 		sTime.Minutes = ts.tm_min;
 		sTime.Seconds = ts.tm_sec;
 		if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
@@ -955,7 +1074,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
   /* USER CODE BEGIN Callback 1 */
   if (htim->Instance == TIM1) {
-	  if (get_hsCounter() & 1) {
+	  if (get_hsCounter() & 1) {//second interrupt - 1 sec
 		  inc_secCounter();
 		  HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
 
