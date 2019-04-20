@@ -44,7 +44,8 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 
 //const char *ver = "ver. 2.4";//16.04.2019 major changes : add freeRTOS
 //const char *ver = "ver. 2.5";//19.04.2019 major changes : add mailQueue
-const char *ver = "ver. 2.6";//20.04.2019 major changes : add new feature - support ws2812
+//const char *ver = "ver. 2.6";//20.04.2019 major changes : add new feature - support ws2812
+const char *ver = "ver. 2.7";//20.04.2019 major changes : used dma1_ch4 for send data to uart1, used Semaphore for access to uart1
 
 /* USER CODE END PD */
 
@@ -70,6 +71,7 @@ DMA_HandleTypeDef hdma_usart1_tx;
 osThreadId defTaskHandle;
 osThreadId bmpTaskHandle;
 osThreadId pwmTaskHandle;
+osSemaphoreId semUartHandle;
 /* USER CODE BEGIN PV */
 
 osMailQId mailQueue = NULL;
@@ -212,6 +214,11 @@ int main(void)
   /* add mutexes, ... */
   /* USER CODE END RTOS_MUTEX */
 
+  /* Create the semaphores(s) */
+  /* definition and creation of semUart */
+  osSemaphoreDef(semUart);
+  semUartHandle = osSemaphoreCreate(osSemaphore(semUart), 1);
+
   /* USER CODE BEGIN RTOS_SEMAPHORES */
   /* add semaphores, ... */
   /* USER CODE END RTOS_SEMAPHORES */
@@ -230,7 +237,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defTask */
-  osThreadDef(defTask, StartDefTask, osPriorityAboveNormal, 0, 512);
+  osThreadDef(defTask, StartDefTask, osPriorityAboveNormal, 0, 576);
   defTaskHandle = osThreadCreate(osThread(defTask), NULL);
 
   /* definition and creation of bmpTask */
@@ -594,10 +601,10 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 4, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
   /* DMA1_Channel7_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
 
 }
@@ -717,46 +724,41 @@ void errLedOn(const char *from)
 	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
 
 	if (from) {
-		char *stx = (char *)malloc(strlen(from) + 16);
+		char *stx = (char *)pvPortMalloc(strlen(from) + 16);
 		if (stx) {
 			sprintf(stx, "Error in '%s'\r\n", from);
 			Report(stx, true);
-			free(stx);
+			vPortFree(stx);
 		}
 	}
 }
 //----------------------------------------------------------------------------------------
 //  if (return pointer != NULL) you must free this pointer after used
-uint16_t sec_to_string(uint32_t sec, char *stx)
+void sec_to_string(uint32_t sec, char *stx)
 {
-uint16_t ret = 0;
-
-	//char *stx = (char *)malloc(24);
-	//if (stx) {
-		if (!setDate) {//no valid date in RTC
-			uint32_t day = sec / (60 * 60 * 24);
-			sec %= (60 * 60 * 24);
-			uint32_t hour = sec / (60 * 60);
-			sec %= (60 * 60);
-			uint32_t min = sec / (60);
-			sec %= 60;
-			ret = sprintf(stx, "%03lu.%02lu:%02lu:%02lu | ", day, hour, min, sec);
-		} else {//in RTC valid date (epoch time)
-			RTC_TimeTypeDef sTime;
-			RTC_DateTypeDef sDate;
-			if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
+	if (!setDate) {//no valid date in RTC
+		uint32_t day = sec / (60 * 60 * 24);
+		sec %= (60 * 60 * 24);
+		uint32_t hour = sec / (60 * 60);
+		sec %= (60 * 60);
+		uint32_t min = sec / (60);
+		sec %= 60;
+		sprintf(stx, "%03lu.%02lu:%02lu:%02lu | ", day, hour, min, sec);
+	} else {//in RTC valid date (epoch time)
+		RTC_TimeTypeDef sTime;
+		RTC_DateTypeDef sDate;
+		if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
+		else {
+			if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
 			else {
-				if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
-				else {
-					ret = sprintf(stx, "%04u.%02u.%02u %02u:%02u:%02u | ",
+				sprintf(stx, "%04u.%02u.%02u %02u:%02u:%02u | ",
 							sDate.Year + 1900, sDate.Month, sDate.Date,
 							sTime.Hours, sTime.Minutes, sTime.Seconds);
-				}
 			}
 		}
-	//}
+	}
 
-    return ret;
+    return;
 }
 //----------------------------------------------------------------------------------------
 //	Out to UART1 data from buffer (like printf)
@@ -766,27 +768,27 @@ void Report(const char *txt, bool addTime)
 {
 HAL_StatusTypeDef er = HAL_OK;
 
-	if (txt) {
+	if (!txt) return;
+	size_t len = strlen(txt);
+	if (!len) return;
 
-		//if (osSemaphoreWait(semUartHandle, 1000/*osWaitForever*/) == osOK) {
-		//if (osMutexWait(uMutexHandle, 1000) == osOK) {
+	if (addTime) len += 24;
 
-			if (addTime) {
-				uint32_t ep;
-				char st[24] = {0};
-				if (!setDate) ep = get_secCounter();
-						 else ep = extDate;
-				uint16_t dl = sec_to_string(ep, st);
-				if (dl) er = HAL_UART_Transmit(&huart1, (uint8_t *)st, dl, 1000);
-			}
-
-			if (er == HAL_OK) er = HAL_UART_Transmit(&huart1, (uint8_t *)txt, strlen(txt), 2000);
-
-		//	osMutexRelease(uMutexHandle);
-		//	osSemaphoreRelease(semUartHandle);
-
-		//} else er = HAL_ERROR;
-
+	char *stx = (char *)pvPortMalloc(len + 1);
+	if (stx) {
+		stx[0] = 0;
+		if (addTime) {
+			uint32_t ep;
+			if (!setDate) ep = get_secCounter();
+					 else ep = extDate;
+			sec_to_string(ep, stx);
+		}
+		strcat(stx, txt);
+		if (osSemaphoreWait(semUartHandle, 2000) == osOK) {
+			er = HAL_UART_Transmit_DMA(&huart1, (uint8_t *)stx, strlen(stx));
+			osSemaphoreRelease(semUartHandle);
+		} else er = HAL_ERROR;
+		vPortFree(stx);
 	} else er = HAL_ERROR;
 
 	if (er != HAL_OK) errLedOn(NULL);
@@ -811,14 +813,15 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 					if (strlen(uk) < 10) setDate = false;
 					else {
 						extDate = atoi(uk);
-						sprintf(RxBuf, "%s:%lu\r\n", _extDate, extDate);
+						//sprintf(RxBuf, "%s:%lu\r\n", _extDate, extDate);
 						set_Date((time_t)extDate);
 					}
 				} else setDate = true;
 			}
-			Report(RxBuf, false);
-			memset(RxBuf, 0, MAX_UART_BUF);
+			//Report(RxBuf, false);
+			//memset(RxBuf, 0, MAX_UART_BUF);
 			rx_uk = 0;
+			RxBuf[rx_uk] = 0;
 		} else rx_uk++;
 
 		HAL_UART_Receive_IT(huart, (uint8_t *)&uRxByte, 1);
@@ -842,20 +845,25 @@ void StartDefTask(void const * argument)
   /* USER CODE BEGIN 5 */
   /* Infinite loop */
 
-	char stx[192] = {0};
+	char *stx = (char *)pvPortMalloc(256);
+	if (!stx) {
+		errLedOn(__func__);
+		LOOP_FOREVER();
+		//osThreadTerminate(osThreadGetId());
+	}
 	char toScreen[64] = {0};
 	result_t *ones = NULL;
 	result_t evt = {0.0, 0.0, 0.0, 0};
 	osEvent event;
-/*
+/**/
 	HAL_Delay(10);
 	char tmp[32];
-	sprintf(tmp, "free %u", xPortGetFreeHeapSize());
+	sprintf(tmp, "free: %u", xPortGetFreeHeapSize());
 	uint8_t col = ssd1306_calcx(strlen(tmp));
 	ssd1306_text_xy(tmp, col, 1);
-*/
-	while (1) {
 /**/
+	while (1) {
+
 		if (mailQueue) {
 			event = osMailGet(mailQueue, 100);
 			if (event.status == osEventMail) ones = event.value.p;
@@ -885,7 +893,7 @@ void StartDefTask(void const * argument)
 			}
 			Report(stx, true);//send data to UART1
 		}
-/**/
+
 		osDelay(100);
 	}
 
@@ -913,19 +921,14 @@ void StartBmpTask(void const * argument)
 	uint8_t reg_conf = 0;
 	size_t d_size    = 1;
 	int32_t temp, pres, humi = 0;
-/*
-	HAL_Delay(20);
-	char tmp[32];
-	sprintf(tmp, "free %u", xPortGetFreeHeapSize());
-	uint8_t col = ssd1306_calcx(strlen(tmp));
-	ssd1306_text_xy(tmp, col, 3);
-*/
+
 	result_t sens;
 	result_t *ones = NULL;
+
 	uint32_t wait_sensor = get_tmr(2);
 
 	while (1) {
-/**/
+
 		if (check_tmr(wait_sensor)) {
 			wait_sensor = get_tmr(wait_sensor_def);
 			if (i2c_master_reset_sensor(&reg_id) != HAL_OK) {
@@ -963,7 +966,7 @@ void StartBmpTask(void const * argument)
 				}
 			}
 		}
-/**/
+
 		osDelay(10);
 	}
 
@@ -1003,6 +1006,7 @@ void StartPwmTask(void const * argument)
 	uint32_t msec = 10;
 
 	/* Infinite loop */
+
 	uint64_t wait_pwm = get_hstmr(2);//1 sec
 
 	while (1) {
@@ -1164,6 +1168,7 @@ void StartPwmTask(void const * argument)
 	  	//
 		osDelay(msec);
 	}
+
   /* USER CODE END StartPwmTask */
 }
 
@@ -1184,8 +1189,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_IncTick();
   }
   /* USER CODE BEGIN Callback 1 */
-  if (htim->Instance == TIM1) {
-	  if (get_hsCounter() & 1) {//second interrupt - 1 sec
+  if (htim->Instance == TIM1) {//half seconda
+	  if (get_hsCounter() & 1) {//seconda
 		  inc_secCounter();
 		  HAL_GPIO_TogglePin(GPIOB, LED1_Pin);//set ON/OFF LED1
 
