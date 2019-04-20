@@ -10,10 +10,10 @@
   * <h2><center>&copy; Copyright (c) 2019 STMicroelectronics.
   * All rights reserved.</center></h2>
   *
-  * This software component is licensed by ST under BSD 3-Clause license,
-  * the "License"; You may not use this file except in compliance with the
-  * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
+  * This software component is licensed by ST under Ultimate Liberty license
+  * SLA0044, the "License"; You may not use this file except in compliance with
+  * the License. You may obtain a copy of the License at:
+  *                             www.st.com/SLA0044
   *
   ******************************************************************************
   */
@@ -40,7 +40,7 @@ extern "C" {
 #include <math.h>
 
 #include "stm32f1xx_hal_uart.h"
-
+#include "cmsis_os.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -54,7 +54,6 @@ typedef enum {
 	ZERO_ALL,
 	COLOR_ALL
 } dir_mode_t;
-
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -63,14 +62,11 @@ typedef enum {
 I2C_HandleTypeDef hi2c2;
 UART_HandleTypeDef huart1;
 TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim1;
 
 HAL_StatusTypeDef i2cError;
 
 const uint32_t min_wait_ms;
 const uint32_t max_wait_ms;
-
-uint8_t HalfsecCounter;
 
 uint8_t GoTxDMA;
 
@@ -94,11 +90,9 @@ void Error_Handler(void);
 int sec_to_str_time(uint32_t sec, char *stx);
 
 void inc_secCounter();
-uint32_t get_secCounter();
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
 
-void Report(const char *txt, bool addCRLF, bool addTime);
 void errLedOn(const char *from);
 
 /* USER CODE END EFP */
@@ -114,15 +108,14 @@ void errLedOn(const char *from);
 #define SDA_GPIO_Port GPIOB
 #define LED2_Pin GPIO_PIN_12
 #define LED2_GPIO_Port GPIOB
-#define TXD_Pin GPIO_PIN_9
-#define TXD_GPIO_Port GPIOA
-#define RXD_Pin GPIO_PIN_10
-#define RXD_GPIO_Port GPIOA
+#define TxD_Pin GPIO_PIN_9
+#define TxD_GPIO_Port GPIOA
+#define RxD_Pin GPIO_PIN_10
+#define RxD_GPIO_Port GPIOA
 /* USER CODE BEGIN Private defines */
 
-#undef SET_SSD1306_INVERT
-
-#define LED_ERROR GPIO_PIN_12
+#define LED_ERROR LED2_Pin
+#define LOOP_FOREVER() while(1) {}
 
 /* USER CODE END Private defines */
 

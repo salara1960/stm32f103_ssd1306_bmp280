@@ -7,6 +7,8 @@
 #ifndef WS2812_H_
 #define WS2812_H_
 
+#include "main.h"
+
 //--------------------------------------------------
 
 #include "stm32f1xx_hal.h"
@@ -22,7 +24,7 @@ typedef struct {
 //--------------------------------------------------
 
 #define DELAY_LEN 48
-#define LED_COUNT 8//144
+#define LED_COUNT 8
 #define ARRAY_LEN DELAY_LEN + (LED_COUNT * 24)// 0 + 8 * 24 = 0 + 192 = 192
 #define HIGH 65
 #define LOW 26

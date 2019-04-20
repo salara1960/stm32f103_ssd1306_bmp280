@@ -9,10 +9,10 @@
   * <h2><center>&copy; Copyright (c) 2019 STMicroelectronics.
   * All rights reserved.</center></h2>
   *
-  * This software component is licensed by ST under BSD 3-Clause license,
-  * the "License"; You may not use this file except in compliance with the
-  * License. You may obtain a copy of the License at:
-  *                        opensource.org/licenses/BSD-3-Clause
+  * This software component is licensed by ST under Ultimate Liberty license
+  * SLA0044, the "License"; You may not use this file except in compliance with
+  * the License. You may obtain a copy of the License at:
+  *                             www.st.com/SLA0044
   *
   ******************************************************************************
   */
@@ -20,18 +20,18 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "setDef.h"
 #include "ssd1306.h"
 #include "bmp280.h"
 #include "ws2812.h"
-
 /*
 post-build steps command:
 arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.bin" && ls -la | grep "${BuildArtifactFileBaseName}.*"
 */
-
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -42,21 +42,9 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-//const char *ver = "ver. 0.1";
-//const char *ver = "ver. 1.1";//02.04.2019
-//const char *ver = "ver. 1.2";//02.04.2019
-//const char *ver = "ver. 1.3";//03.04.2019
-//const char *ver = "ver. 1.4";//05.04.2019
-//const char *ver = "ver. 1.5";//05.04.2019 put user code in corresponding block
-//const char *ver = "ver. 1.6";//06.04.2019 used TIM2 (1 sec. period) with interrupt
-//const char *ver = "ver. 1.7";//07.04.2019 used ADC1 with interrupt for measure the supply voltage
-//const char *ver = "ver. 1.8";//09.04.2019 used DMA for trasmit data to usart1 (500000 8N1)
-//const char *ver = "ver. 1.9";//10.04.2019 used interrupt for receive data from uart1 (echo mode)
-//const char *ver = "ver. 2.0";//11.04.2019 set date in RTC from GMT epoch time using uart1 (for example : date=1554977111)
-//const char *ver = "ver. 2.1";//13.04.2019 add WS2812 (used tim2 with dma1_channel7 -> pin PA1)
-//const char *ver = "ver. 2.2";//14.04.2019 minor changes in scena[] of ws2812
-const char *ver = "ver. 2.3";//15.04.2019 minor changes : add new ledMode for ws2812 (RAINBOW, COLOR_UP/DOWN, WHITE_UP/DOWN)
-
+//const char *ver = "ver. 2.4";//16.04.2019 major changes : add freeRTOS
+//const char *ver = "ver. 2.5";//19.04.2019 major changes : add mailQueue
+const char *ver = "ver. 2.6";//20.04.2019 major changes : add new feature - support ws2812
 
 /* USER CODE END PD */
 
@@ -79,7 +67,12 @@ DMA_HandleTypeDef hdma_tim2_ch2_ch4;
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_tx;
 
+osThreadId defTaskHandle;
+osThreadId bmpTaskHandle;
+osThreadId pwmTaskHandle;
 /* USER CODE BEGIN PV */
+
+osMailQId mailQueue = NULL;
 
 HAL_StatusTypeDef i2cError = HAL_OK;
 const uint32_t min_wait_ms = 350;
@@ -89,15 +82,14 @@ volatile static uint32_t secCounter = 0;
 volatile static uint64_t HalfSecCounter = 0;
 volatile static float dataADC = 0.0;
 
-const char *_extDate = "date=";
-volatile static uint32_t extDate = 0;
-static bool setDate = false;
+static const char *_extDate = "date=";
+volatile uint32_t extDate = 0;
+bool setDate = false;
 static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
 volatile uint8_t uRxByte = 0;
 
 uint8_t GoTxDMA = 0;
-
 const rgb_t ws2812_const[LED_COUNT] = {
 	RGB_SET(L64,   0,   0),
 	RGB_SET(0,   L64,   0),
@@ -114,6 +106,7 @@ const dir_mode_t scena[] = {
    	COLOR_DOWN,
 	COLOR_UP,
 	WHITE_DOWN,
+	WHITE_UP,
 	ZERO_ALL
 };
 
@@ -123,24 +116,25 @@ const dir_mode_t scena[] = {
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
-static void MX_I2C2_Init(void);
 static void MX_USART1_UART_Init(void);
-static void MX_TIM2_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM1_Init(void);
+static void MX_I2C2_Init(void);
+static void MX_TIM2_Init(void);
+void StartDefTask(void const * argument);
+void StartBmpTask(void const * argument);
+void StartPwmTask(void const * argument);
+
 /* USER CODE BEGIN PFP */
 
+int sec_to_str_time(uint32_t sec, char *stx);
+void inc_secCounter();
 uint32_t get_secCounter();
-char *sec_to_string(uint32_t sec);
-void Report(const char *txt, bool addCRLF, bool addTime);
-void errLedOn(const char *from);
 uint32_t get_tmr(uint32_t sec);
 bool check_tmr(uint32_t sec);
-
-uint64_t get_hstmr(uint64_t sec);
-bool check_hstmr(uint64_t sec);
-
+void Report(const char *txt, bool addTime);
+void errLedOn(const char *from);
 
 /* USER CODE END PFP */
 
@@ -178,300 +172,93 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_I2C2_Init();
   MX_USART1_UART_Init();
-  MX_TIM2_Init();
   MX_ADC1_Init();
   MX_RTC_Init();
   MX_TIM1_Init();
+  MX_I2C2_Init();
+  MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
 
+  HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
 
-    HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
+  // start timer1 + interrupt
+  HAL_TIM_Base_Start(&htim1);
+  HAL_TIM_Base_Start_IT(&htim1);
+  //start ADC1 + interrupt
+  HAL_ADC_Start_IT(&hadc1);
+  //"start" rx_interrupt
+  HAL_UART_Receive_IT(&huart1, (uint8_t *)&uRxByte, 1);
 
-    // start timer1 + interrupt
-    HAL_TIM_Base_Start(&htim1);
-    HAL_TIM_Base_Start_IT(&htim1);
-    //start ADC1 + interrupt
-    HAL_ADC_Start_IT(&hadc1);
-    //"start" rx_interrupt
-    HAL_UART_Receive_IT(&huart1, (uint8_t *)&uRxByte, 1);
 
-    HAL_Delay(1000);
-
-    ssd1306_on(true);//screen ON
-    if (!i2cError) {
-    	ssd1306_init();//screen INIT
-    	if (!i2cError) {
-    		ssd1306_pattern();//set any params for screen
-    		if (!i2cError) {
+  ssd1306_on(true);//screen ON
+  if (!i2cError) {
+	  ssd1306_init();//screen INIT
+	  if (!i2cError) {
+		  ssd1306_pattern();//set any params for screen
+		  if (!i2cError) {
 #ifdef SET_SSD1306_INVERT
-    			ssd1306_invert();//set inverse color mode
-    			if (!i2cError)
+			  ssd1306_invert();//set inverse color mode
+			  if (!i2cError)
 #endif
-    				ssd1306_clear();//clear screen
-    		}
-    	}
-    }
-
-    HAL_Delay(1000);
-
-    char stx[256] = {0};
-    char toScreen[128] = {0};
-
-    sprintf(stx, "Start main %s", ver);
-    Report(stx, true, true);//send data to UART1
-
-    // variable declaration for BMP280 sensor
-    uint8_t data_rdx[256] = {0};
-    uint8_t reg_id   = 0;
-    uint8_t reg_stat = 0;
-    uint8_t reg_mode = 0;
-    uint8_t reg_conf = 0;
-    size_t d_size    = 1;
-    int32_t temp, pres, humi = 0;
-    char sensorType[32] = {0};
-
-    //for WS2812 : tim2_channel2 + dma1_channel7
-    uint8_t scenaINDEX = 0;
-    bool new_scena = false;
-    bool proc = true;
-    const uint8_t maxSCENA = sizeof(scena);
-    dir_mode_t ledMode = scena[scenaINDEX];
-    static rgb_t ws2812_arr[LED_COUNT];
-
-    ws2812_init();
-
-    //for ledMode : RAINBOW, WHITE_X, COLOR_X
-    const uint8_t anim_step = 10;
-    const uint8_t anim_max = 150;
-    const uint32_t cntMode_def = 250;
-    rgb_t color1, color2;
-    uint8_t step1 = 0, step2 = 0, shift = 0, c_max = anim_max, c_min = 0, ind;
-    uint32_t msec = 10, cntMode = cntMode_def;
-    bool line_first = true;
+				  ssd1306_clear();//clear screen
+		  }
+      }
+  }
 
   /* USER CODE END 2 */
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+
+  osMailQDef(nameQueue, 4, result_t);
+  mailQueue = osMailCreate(osMailQ(nameQueue), NULL);
+
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* definition and creation of defTask */
+  osThreadDef(defTask, StartDefTask, osPriorityAboveNormal, 0, 512);
+  defTaskHandle = osThreadCreate(osThread(defTask), NULL);
+
+  /* definition and creation of bmpTask */
+  osThreadDef(bmpTask, StartBmpTask, osPriorityNormal, 0, 384);
+  bmpTaskHandle = osThreadCreate(osThread(bmpTask), NULL);
+
+  /* definition and creation of pwmTask */
+  osThreadDef(pwmTask, StartPwmTask, osPriorityNormal, 0, 384);
+  pwmTaskHandle = osThreadCreate(osThread(pwmTask), NULL);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* Start scheduler */
+  osKernelStart();
+  
+  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-    uint32_t wait_sensor = get_tmr(2);//set wait time to 2 sec.
+  	  LOOP_FOREVER();
 
-    uint64_t wait_pwm = get_hstmr(2);//1 sec
-
-  while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-	  	if (check_hstmr(wait_pwm) && !GoTxDMA) {
-	  		msec = 10;
-	  		switch (ledMode) {
-	  			case RAINBOW :
-	  				if (line_first) {
-	  					color1 = color2 = RGB_SET(anim_max, 0, 0);
-	  					step1 = step2 = 0;
-	  					line_first = false;
-	  				}
-	  				color1 = color2;
-	  				step1 = step2;
-	  				for (ind = 0; ind < LED_COUNT; ind++) {
-	  					ws2812_arr[ind] = color1;
-	  					if (ind == 1) {
-	  						color2 = color1;
-	  						step2 = step1;
-	  					}
-	  					switch (step1) {
-	  						case 0:
-	  							color1.green += anim_step;
-	  							if (color1.green >= anim_max) step1++;
-	  						break;
-	  						case 1:
-	  							color1.red -= anim_step;
-	  							if (color1.red == 0) step1++;
-	  						break;
-	  						case 2:
-	  							color1.blue += anim_step;
-	  							if (color1.blue >= anim_max) step1++;
-	  						break;
-	  						case 3:
-	  							color1.green -= anim_step;
-	  							if (color1.green == 0) step1++;
-	  						break;
-	  						case 4:
-	  							color1.red += anim_step;
-	  							if (color1.red >= anim_max) step1++;
-	  						break;
-	  						case 5:
-	  							color1.blue -= anim_step;
-	  							if (color1.blue == 0) step1 = 0;
-	  						break;
-	  					}
-	  				}
-	  				proc = true;
-	  				new_scena = false;
-	  				cntMode--;
-	  				if (!cntMode) {
-	  					cntMode = cntMode_def;
-	  					new_scena = true;
-	  					line_first = true;
-	  				}
-	  			break;
-	  			case COLOR_UP :
-	  			case COLOR_DOWN :
-	  			case WHITE_UP :
-	  			case WHITE_DOWN :
-	  				if (line_first) {
-	  					if (ledMode == COLOR_UP) {
-	  						shift = 0;
-	  						c_min = 0; c_max = anim_max;
-	  					} else if (ledMode == COLOR_DOWN) {
-	  						shift = LED_COUNT - 1;
-	  						c_min = 0; c_max = anim_max;
-	  					} else if (ledMode == WHITE_UP) {
-	  						shift = 0;
-	  						c_min = c_max = anim_max;
-	  					} else if (ledMode == WHITE_DOWN) {
-	  						shift = LED_COUNT - 1;
-	  						c_min = c_max = anim_max;
-	  					}
-	  					line_first = false;
-	  				}
-	  				step1 = 0;
-	  				color1 = color2 = RGB_SET(0,0,0);
-	  				for (ind = 0; ind < LED_COUNT; ind++) {
-	  					switch (step1) {
-	  						case 0:
-	  							color1.red = c_max;
-	  							color1.green = color1.blue = c_min;
-	  							step1++;
-	  						break;
-	  						case 1:
-	  							color1.green = c_max;
-	  							color1.red = color1.blue = c_min;
-	  							step1++;
-	  						break;
-	  						case 2:
-	  							color1.blue = c_max;
-	  							color1.red = color1.green = c_min;
-	  							step1++;
-	  						break;
-	  						case 3:
-	  							color1.red = color1.green = c_max;
-	  							color1.blue = c_min;
-	  							step1++;
-	  						break;
-	  						case 4:
-	  							color1.red = color1.blue = c_max;
-	  							color1.green = c_min;
-	  							step1++;
-	  						break;
-	  						case 5:
-	  							color1.green = color1.blue =  c_max;
-	  							color1.red = c_min;
-	  							step1 = 0;
-	  						break;
-	  					}
-	  					if (ind == shift)
-	  						ws2812_arr[ind] = color1;
-	  					else
-	  						ws2812_arr[ind] = color2;
-	  				}
-	  				if ((ledMode == COLOR_UP) || (ledMode == WHITE_UP)) {
-	  					shift++;
-	  					if (shift >= LED_COUNT) shift = 0;
-	  				} else if ((ledMode == COLOR_DOWN) || (ledMode == WHITE_DOWN)) {
-	  					if (shift > 0)
-	  						shift--;
-	  					else
-	  						shift = LED_COUNT - 1;
-	  				}
-	  				proc = true;
-	  				new_scena = false;
-	  				cntMode--;
-	  				if (!cntMode) {
-	  					cntMode = cntMode_def;
-	  					new_scena = true;
-	  					line_first = true;
-	  				}
-	  			break;
-	  			case ZERO_ALL :
-	  				memset((uint8_t *)&ws2812_arr, 0, sizeof(rgb_t)*LED_COUNT);
-	  				new_scena = proc = true;
-	  			break;
-	  			case COLOR_ALL :
-	  				memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(rgb_t)*LED_COUNT);
-	  				new_scena = proc = true;
-	  			break;
-	  		}
-	  		if (new_scena) {
-	  			new_scena = false;
-	  			scenaINDEX++; if (scenaINDEX >= maxSCENA) scenaINDEX = 0;
-	  			ledMode = scena[scenaINDEX];
-	  		}
-	  		if (proc) {
-	  			ws2812_setData((void *)&ws2812_arr);
-	  			ws2812_start();
-	  			if ((ledMode == COLOR_ALL) || (ledMode == ZERO_ALL)) {
-	  				cntMode = cntMode_def;
-	  				line_first = true;
-	  				wait_pwm = get_hstmr(2);//1 sec
-	  			} else msec = 30;
-	  		}
-	  	}
-
-    	HAL_Delay(msec);
-
-    	//------------------------------------------------------------------------
-
-    	if (check_tmr(wait_sensor)) {
-    		//
-    		wait_sensor = get_tmr(wait_sensor_def);
-    		//
-    		if (i2c_master_reset_sensor(&reg_id) != HAL_OK) continue;
-    		sprintf(stx,"Vcc=%.3f v, ADDR=0x%02X ", dataADC, BMP280_ADDR);
-    		sensorType[0] = 0;
-    		switch (reg_id) {
-    			case BMP280_SENSOR : strcpy(sensorType,"BMP280"); d_size = 6; break;
-    			case BME280_SENSOR : strcpy(sensorType,"BME280"); d_size = 8; break;
-    				default : strcpy(sensorType,"Unknown chip");
-    		}
-    		sprintf(stx+strlen(stx),"(%s)", sensorType);
-    		if (i2c_master_test_sensor(&reg_stat, &reg_mode, &reg_conf, reg_id) != HAL_OK) {
-    			sprintf(stx+strlen(stx)," No ack...try again. (reg_id=0x%02x)", reg_id);
-    			Report(stx, true, true);//send data to UART1
-    			continue;
-    		}
-    		reg_stat &= 0x0f;
-    		memset(data_rdx, 0, DATA_LENGTH);
-    		if (i2c_master_read_sensor(BMP280_REG_PRESSURE, &data_rdx[0], d_size) == HAL_OK) {
-    			if (bmp280_readCalibrationData(reg_id) != HAL_OK) {
-    				sprintf(stx+strlen(stx)," Reading Calibration Data ERROR");
-    			} else {
-    				pres = temp = 0;
-    				pres = (data_rdx[0] << 12) | (data_rdx[1] << 4) | (data_rdx[2] >> 4);
-    				temp = (data_rdx[3] << 12) | (data_rdx[4] << 4) | (data_rdx[5] >> 4);
-    				if (reg_id == BME280_SENSOR) humi = (data_rdx[6] << 8) | data_rdx[7];
-    				bmp280_CalcAll(&sensors, reg_id, temp, pres, humi);
-    				sprintf(stx+strlen(stx)," Press=%.2f mmHg, Temp=%.2f DegC", sensors.pres, sensors.temp);
-    				if (reg_id == BME280_SENSOR) sprintf(stx+strlen(stx)," Humidity=%.2f %%rH", sensors.humi);
-
-    				if (i2cError == HAL_OK) {
-    					sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", sensors.pres, sensors.temp);
-    					if (reg_id == BME280_SENSOR) sprintf(toScreen+strlen(toScreen),"\nHumi:%.2f %%rH", sensors.humi);
-    					ssd1306_text_xy(toScreen, 1, 6);//send string to screen
-    				}
-
-    			}
-    		} else strcat(stx,"Read sensor error");
-    		Report(stx, true, true);//send data to UART1
-    		//
-    	}
-
-    	//------------------------------------------------------------------------
-
-  }
   /* USER CODE END 3 */
 }
 
@@ -666,11 +453,8 @@ static void MX_TIM1_Init(void)
 {
 
   /* USER CODE BEGIN TIM1_Init 0 */
-
-	//init counters
 	secCounter     = 0; //1 sec counter (32bit)
 	HalfSecCounter = 0; // 0.5 sec counter (64bit)
-
   /* USER CODE END TIM1_Init 0 */
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
@@ -680,9 +464,9 @@ static void MX_TIM1_Init(void)
 
   /* USER CODE END TIM1_Init 1 */
   htim1.Instance = TIM1;
-  htim1.Init.Prescaler = 18000 - 1;
+  htim1.Init.Prescaler = 17999;
   htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim1.Init.Period = 500 - 1;
+  htim1.Init.Period = 499;
   htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim1.Init.RepetitionCounter = 0;
   htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
@@ -810,7 +594,7 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA1_Channel4_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 3, 0);
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
   /* DMA1_Channel7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 0, 0);
@@ -847,8 +631,6 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 //-----------------------------------------------------------------------------
-
-//-----------------------------------------------------------------------------
 void set_Date(time_t epoch)
 {
 RTC_TimeTypeDef sTime;
@@ -875,18 +657,13 @@ struct tm ts;
 //-----------------------------------------------------------------------------
 int sec_to_str_time(uint32_t sec, char *stx)
 {
-uint32_t s = sec;
-
-	uint32_t day = s / (60 * 60 * 24);
-	s %= (60 * 60 * 24);
-
-    uint32_t hour = s / (60 * 60);
-    s %= (60 * 60);
-
-    uint32_t min = s / (60);
-    s %= 60;
-
-    return (sprintf(stx, "%lu.%02lu:%02lu:%02lu", day, hour, min, s));
+	uint32_t day = sec / (60 * 60 * 24);
+	sec %= (60 * 60 * 24);
+    uint32_t hour = sec / (60 * 60);
+    sec %= (60 * 60);
+    uint32_t min = sec / (60);
+    sec %= 60;
+    return (sprintf(stx, "%lu.%02lu:%02lu:%02lu", day, hour, min, sec));
 }
 //-----------------------------------------------------------------------------
 uint32_t get_secCounter()
@@ -908,93 +685,6 @@ void inc_hsCounter()
 {
 	HalfSecCounter++;
 }
-//----------------------------------------------------------------------------------------
-//  if (return pointer != NULL) you must free this pointer after used
-char *sec_to_string(uint32_t sec)
-{
-	char *stx = (char *)calloc(1, 32);
-	if (stx) {
-		if (!setDate) {//no valid date in RTC
-			uint32_t day = sec / (60 * 60 * 24);
-			sec %= (60 * 60 * 24);
-			uint32_t hour = sec / (60 * 60);
-			sec %= (60 * 60);
-			uint32_t min = sec / (60);
-			sec %= 60;
-			sprintf(stx, "%03lu.%02lu:%02lu:%02lu", day, hour, min, sec);
-		} else {//in RTC valid date (epoch time)
-			RTC_TimeTypeDef sTime;
-			RTC_DateTypeDef sDate;
-			if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
-			else {
-				if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
-				else {
-					sprintf(stx,"%04u.%02u.%02u %02u:%02u:%02u",
-							sDate.Year + 1900, sDate.Month, sDate.Date,
-							sTime.Hours, sTime.Minutes, sTime.Seconds);
-				}
-			}
-		}
-	}
-
-    return stx;
-}
-//----------------------------------------------------------------------------------------
-//	Out to UART1 data from buffer (like printf)
-//     txt - string for send to uart
-//     addCRLF - flag append or not "\r\n" to data before sending
-//     addTime - flag insert or not TickCount before data
-void Report(const char *txt, bool addCRLF, bool addTime)
-{
-	if (!txt)  return;
-
-	uint16_t len = strlen(txt);
-	if (addCRLF) len += 2;
-	if (addTime) len += 32;
-	char *buf = (char *)calloc(1, len + 1);//get buffer for data in heap memory
-	if (!buf) return;
-
-	if (addTime) {
-		uint32_t ep;
-		if (!setDate) ep = get_secCounter();
-				 else ep = extDate;
-		char *stime = sec_to_string(ep);
-		if (stime) {
-			strcpy(buf, stime);
-			strcat(buf, " | ");
-			free(stime);//release memory by pointer stime
-		}
-	}
-	strcat(buf, txt);
-	if (addCRLF) strcat(buf, "\r\n");
-	len = strlen(buf);
-
-	// send data to UART1 via DMA1_Channel4
-	if (HAL_UART_Transmit_DMA(&huart1, (uint8_t *)buf, len) != HAL_OK) errLedOn(NULL);
-
-	free(buf);
-
-}
-//------------------------------------------------------------------------------------------
-// set LED_ERROR when error on and send message to UART1 (in from != NULL)
-//     from - name of function where error location
-void errLedOn(const char *from)
-{
-	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
-	HAL_Delay(200);
-	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_SET);//LED OFF
-	HAL_Delay(200);
-	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
-
-	if (from) {
-		char *stx = (char *)calloc(1, strlen(from) + 16);
-		if (stx) {
-			sprintf(stx, "Error in '%s'", from);
-			Report(stx, true, true);
-			free(stx);
-		}
-	}
-}
 //------------------------------------------------------------------------------------------
 uint32_t get_tmr(uint32_t sec)
 {
@@ -1014,6 +704,92 @@ uint64_t get_hstmr(uint64_t hs)
 bool check_hstmr(uint64_t hs)
 {
 	return (get_hsCounter() >= hs ? true : false);
+}
+//------------------------------------------------------------------------------------------
+// set LED_ERROR when error on and send message to UART1 (in from != NULL)
+//     from - name of function where error location
+void errLedOn(const char *from)
+{
+	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
+	HAL_Delay(250);
+	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_SET);//LED OFF
+	HAL_Delay(250);
+	HAL_GPIO_WritePin(GPIOB, LED_ERROR, GPIO_PIN_RESET);//LED ON
+
+	if (from) {
+		char *stx = (char *)malloc(strlen(from) + 16);
+		if (stx) {
+			sprintf(stx, "Error in '%s'\r\n", from);
+			Report(stx, true);
+			free(stx);
+		}
+	}
+}
+//----------------------------------------------------------------------------------------
+//  if (return pointer != NULL) you must free this pointer after used
+uint16_t sec_to_string(uint32_t sec, char *stx)
+{
+uint16_t ret = 0;
+
+	//char *stx = (char *)malloc(24);
+	//if (stx) {
+		if (!setDate) {//no valid date in RTC
+			uint32_t day = sec / (60 * 60 * 24);
+			sec %= (60 * 60 * 24);
+			uint32_t hour = sec / (60 * 60);
+			sec %= (60 * 60);
+			uint32_t min = sec / (60);
+			sec %= 60;
+			ret = sprintf(stx, "%03lu.%02lu:%02lu:%02lu | ", day, hour, min, sec);
+		} else {//in RTC valid date (epoch time)
+			RTC_TimeTypeDef sTime;
+			RTC_DateTypeDef sDate;
+			if (HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
+			else {
+				if (HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN) != HAL_OK) errLedOn(__func__);
+				else {
+					ret = sprintf(stx, "%04u.%02u.%02u %02u:%02u:%02u | ",
+							sDate.Year + 1900, sDate.Month, sDate.Date,
+							sTime.Hours, sTime.Minutes, sTime.Seconds);
+				}
+			}
+		}
+	//}
+
+    return ret;
+}
+//----------------------------------------------------------------------------------------
+//	Out to UART1 data from buffer (like printf)
+//     txt - string for send to uart
+//     addTime - flag insert or not secCount before txt
+void Report(const char *txt, bool addTime)
+{
+HAL_StatusTypeDef er = HAL_OK;
+
+	if (txt) {
+
+		//if (osSemaphoreWait(semUartHandle, 1000/*osWaitForever*/) == osOK) {
+		//if (osMutexWait(uMutexHandle, 1000) == osOK) {
+
+			if (addTime) {
+				uint32_t ep;
+				char st[24] = {0};
+				if (!setDate) ep = get_secCounter();
+						 else ep = extDate;
+				uint16_t dl = sec_to_string(ep, st);
+				if (dl) er = HAL_UART_Transmit(&huart1, (uint8_t *)st, dl, 1000);
+			}
+
+			if (er == HAL_OK) er = HAL_UART_Transmit(&huart1, (uint8_t *)txt, strlen(txt), 2000);
+
+		//	osMutexRelease(uMutexHandle);
+		//	osSemaphoreRelease(semUartHandle);
+
+		//} else er = HAL_ERROR;
+
+	} else er = HAL_ERROR;
+
+	if (er != HAL_OK) errLedOn(NULL);
 }
 //------------------------------------------------------------------------------------------
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
@@ -1040,7 +816,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 					}
 				} else setDate = true;
 			}
-			Report(RxBuf, false, false);
+			Report(RxBuf, false);
 			memset(RxBuf, 0, MAX_UART_BUF);
 			rx_uk = 0;
 		} else rx_uk++;
@@ -1050,7 +826,346 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 	}
 }
 //------------------------------------------------------------------------------------------
+
 /* USER CODE END 4 */
+
+/* USER CODE BEGIN Header_StartDefTask */
+/**
+  * @brief  Function implementing the defTask thread.
+  * @param  argument: Not used 
+  * @retval None
+  */
+/* USER CODE END Header_StartDefTask */
+void StartDefTask(void const * argument)
+{
+
+  /* USER CODE BEGIN 5 */
+  /* Infinite loop */
+
+	char stx[192] = {0};
+	char toScreen[64] = {0};
+	result_t *ones = NULL;
+	result_t evt = {0.0, 0.0, 0.0, 0};
+	osEvent event;
+/*
+	HAL_Delay(10);
+	char tmp[32];
+	sprintf(tmp, "free %u", xPortGetFreeHeapSize());
+	uint8_t col = ssd1306_calcx(strlen(tmp));
+	ssd1306_text_xy(tmp, col, 1);
+*/
+	while (1) {
+/**/
+		if (mailQueue) {
+			event = osMailGet(mailQueue, 100);
+			if (event.status == osEventMail) ones = event.value.p;
+		}
+		if (ones) {
+			memcpy((uint8_t *)&evt, (uint8_t *)ones, sizeof(result_t));
+			osMailFree(mailQueue, ones);
+			ones = NULL;
+			sprintf(stx, "Vcc=%.3f v, ", dataADC);
+			switch (evt.chip) {
+					case BMP280_SENSOR : strcat(stx, "BMP280:"); break;
+					case BME280_SENSOR : strcat(stx, "BME280:"); break;
+						default : strcat(stx, "Unknown:");
+			}
+			sprintf(stx+strlen(stx), " Press=%.2f mmHg, Temp=%.2f DegC", evt.pres, evt.temp);
+			if (evt.chip == BME280_SENSOR) sprintf(stx+strlen(stx), " Humidity=%.2f %%rH", evt.humi);
+			strcat(stx, "\r\n");
+			//
+			if (i2cError == HAL_OK) {
+				sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", evt.pres, evt.temp);
+				if (evt.chip == BME280_SENSOR) sprintf(toScreen+strlen(toScreen), "\nHumi:%.2f %%rH", evt.humi);
+#ifdef SET_SSD1306_INVERT
+				ssd1306_invert();
+				if (!i2cError)
+#endif
+					ssd1306_text_xy(toScreen, 1, 6);//send string to screen
+			}
+			Report(stx, true);//send data to UART1
+		}
+/**/
+		osDelay(100);
+	}
+
+  /* USER CODE END 5 */ 
+}
+
+/* USER CODE BEGIN Header_StartBmpTask */
+/**
+* @brief Function implementing the bmpTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartBmpTask */
+void StartBmpTask(void const * argument)
+{
+  /* USER CODE BEGIN StartBmpTask */
+	/* Infinite loop */
+
+	// variable declaration for BMP280 sensor
+
+	uint8_t data_rdx[DATA_LENGTH] = {0};
+	uint8_t reg_id   = 0;
+	uint8_t reg_stat = 0;
+	uint8_t reg_mode = 0;
+	uint8_t reg_conf = 0;
+	size_t d_size    = 1;
+	int32_t temp, pres, humi = 0;
+/*
+	HAL_Delay(20);
+	char tmp[32];
+	sprintf(tmp, "free %u", xPortGetFreeHeapSize());
+	uint8_t col = ssd1306_calcx(strlen(tmp));
+	ssd1306_text_xy(tmp, col, 3);
+*/
+	result_t sens;
+	result_t *ones = NULL;
+	uint32_t wait_sensor = get_tmr(2);
+
+	while (1) {
+/**/
+		if (check_tmr(wait_sensor)) {
+			wait_sensor = get_tmr(wait_sensor_def);
+			if (i2c_master_reset_sensor(&reg_id) != HAL_OK) {
+				wait_sensor = get_tmr(2);
+				continue;
+			}
+			switch (reg_id) {
+				case BMP280_SENSOR : d_size = 6; break;
+				case BME280_SENSOR : d_size = 8; break;
+				default : {
+					wait_sensor = get_tmr(2);
+					continue;
+				}
+			}
+			if (i2c_master_test_sensor(&reg_stat, &reg_mode, &reg_conf, reg_id) != HAL_OK) {
+				wait_sensor = get_tmr(2);
+				continue;
+			}
+			reg_stat &= 0x0f;
+			memset(data_rdx, 0, DATA_LENGTH);
+			if (i2c_master_read_sensor(BMP280_REG_PRESSURE, data_rdx, d_size) == HAL_OK) {
+				if (bmp280_readCalibrationData(reg_id) == HAL_OK) {
+					pres = temp = 0;
+					pres = (data_rdx[0] << 12) | (data_rdx[1] << 4) | (data_rdx[2] >> 4);
+					temp = (data_rdx[3] << 12) | (data_rdx[4] << 4) | (data_rdx[5] >> 4);
+					if (reg_id == BME280_SENSOR) humi = (data_rdx[6] << 8) | data_rdx[7];
+					bmp280_CalcAll(&sens, reg_id, temp, pres, humi);
+					if (mailQueue) {
+						ones = (result_t *)osMailAlloc(mailQueue, 1000);//osWaitForever);
+						if (ones) {
+							memcpy((uint8_t *)ones, (uint8_t *)&sens, sizeof(result_t));
+							osMailPut(mailQueue, (void *)ones);
+						}
+					}
+				}
+			}
+		}
+/**/
+		osDelay(10);
+	}
+
+  /* USER CODE END StartBmpTask */
+}
+
+/* USER CODE BEGIN Header_StartPwmTask */
+/**
+* @brief Function implementing the pwmTask thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartPwmTask */
+void StartPwmTask(void const * argument)
+{
+  /* USER CODE BEGIN StartPwmTask */
+
+	//for WS2812 : tim2_channel2 + dma1_channel7
+	uint8_t scenaINDEX = 0;
+	bool new_scena = false;
+	bool proc = true;
+	const uint8_t maxSCENA = sizeof(scena);
+	dir_mode_t ledMode = scena[scenaINDEX];
+	static rgb_t ws2812_arr[LED_COUNT];
+
+	ws2812_init();
+
+	//for ledMode : RAINBOW, WHITE_X, COLOR_X
+	const uint8_t anim_step = 10;
+	const uint8_t anim_max = 150;
+	const uint32_t cntMode_def = 250;
+	rgb_t color1, color2;
+	uint8_t step1 = 0, step2 = 0, shift = 0, c_max = anim_max, c_min = 0, ind;
+	uint32_t cntMode = cntMode_def;
+	bool line_first = true;
+
+	uint32_t msec = 10;
+
+	/* Infinite loop */
+	uint64_t wait_pwm = get_hstmr(2);//1 sec
+
+	while (1) {
+	  	if (check_hstmr(wait_pwm) && !GoTxDMA) {
+	  		msec = 2;//10
+	  		switch (ledMode) {
+	  			case RAINBOW :
+	  				if (line_first) {
+	  					color1 = color2 = RGB_SET(anim_max, 0, 0);
+	  					step1 = step2 = 0;
+	  					line_first = false;
+	  				}
+	  				color1 = color2;
+	  				step1 = step2;
+	  				for (ind = 0; ind < LED_COUNT; ind++) {
+	  					ws2812_arr[ind] = color1;
+	  					if (ind == 1) {
+	  						color2 = color1;
+	  						step2 = step1;
+	  					}
+	  					switch (step1) {
+	  						case 0:
+	  							color1.green += anim_step;
+	  							if (color1.green >= anim_max) step1++;
+	  						break;
+	  						case 1:
+	  							color1.red -= anim_step;
+	  							if (color1.red == 0) step1++;
+	  						break;
+	  						case 2:
+	  							color1.blue += anim_step;
+	  							if (color1.blue >= anim_max) step1++;
+	  						break;
+	  						case 3:
+	  							color1.green -= anim_step;
+	  							if (color1.green == 0) step1++;
+	  						break;
+	  						case 4:
+	  							color1.red += anim_step;
+	  							if (color1.red >= anim_max) step1++;
+	  						break;
+	  						case 5:
+	  							color1.blue -= anim_step;
+	  							if (color1.blue == 0) step1 = 0;
+	  						break;
+	  					}
+	  				}
+	  				proc = true;
+	  				new_scena = false;
+	  				cntMode--;
+	  				if (!cntMode) {
+	  					cntMode = cntMode_def;
+	  					new_scena = true;
+	  					line_first = true;
+	  				}
+	  			break;
+	  			case COLOR_UP :
+	  			case COLOR_DOWN :
+	  			case WHITE_UP :
+	  			case WHITE_DOWN :
+	  				if (line_first) {
+	  					if (ledMode == COLOR_UP) {
+	  						shift = 0;
+	  						c_min = 0; c_max = anim_max;
+	  					} else if (ledMode == COLOR_DOWN) {
+	  						shift = LED_COUNT - 1;
+	  						c_min = 0; c_max = anim_max;
+	  					} else if (ledMode == WHITE_UP) {
+	  						shift = 0;
+	  						c_min = c_max = anim_max;
+	  					} else if (ledMode == WHITE_DOWN) {
+	  						shift = LED_COUNT - 1;
+	  						c_min = c_max = anim_max;
+	  					}
+	  					line_first = false;
+	  				}
+	  				step1 = 0;
+	  				color1 = color2 = RGB_SET(0,0,0);
+	  				for (ind = 0; ind < LED_COUNT; ind++) {
+	  					switch (step1) {
+	  						case 0:
+	  							color1.red = c_max;
+	  							color1.green = color1.blue = c_min;
+	  							step1++;
+	  						break;
+	  						case 1:
+	  							color1.green = c_max;
+	  							color1.red = color1.blue = c_min;
+	  							step1++;
+	  						break;
+	  						case 2:
+	  							color1.blue = c_max;
+	  							color1.red = color1.green = c_min;
+	  							step1++;
+	  						break;
+	  						case 3:
+	  							color1.red = color1.green = c_max;
+	  							color1.blue = c_min;
+	  							step1++;
+	  						break;
+	  						case 4:
+	  							color1.red = color1.blue = c_max;
+	  							color1.green = c_min;
+	  							step1++;
+	  						break;
+	  						case 5:
+	  							color1.green = color1.blue =  c_max;
+	  							color1.red = c_min;
+	  							step1 = 0;
+	  						break;
+	  					}
+	  					if (ind == shift)
+	  						ws2812_arr[ind] = color1;
+	  					else
+	  						ws2812_arr[ind] = color2;
+	  				}
+	  				if ((ledMode == COLOR_UP) || (ledMode == WHITE_UP)) {
+	  					shift++;
+	  					if (shift >= LED_COUNT) shift = 0;
+	  				} else if ((ledMode == COLOR_DOWN) || (ledMode == WHITE_DOWN)) {
+	  					if (shift > 0)
+	  						shift--;
+	  					else
+	  						shift = LED_COUNT - 1;
+	  				}
+	  				proc = true;
+	  				new_scena = false;
+	  				cntMode--;
+	  				if (!cntMode) {
+	  					cntMode = cntMode_def;
+	  					new_scena = true;
+	  					line_first = true;
+	  				}
+	  			break;
+	  			case ZERO_ALL :
+	  				memset((uint8_t *)&ws2812_arr, 0, sizeof(rgb_t)*LED_COUNT);
+	  				new_scena = proc = true;
+	  			break;
+	  			case COLOR_ALL :
+	  				memcpy((uint8_t *)&ws2812_arr, (uint8_t *)&ws2812_const, sizeof(rgb_t)*LED_COUNT);
+	  				new_scena = proc = true;
+	  			break;
+	  		}
+	  		if (new_scena) {
+	  			new_scena = false;
+	  			scenaINDEX++; if (scenaINDEX >= maxSCENA) scenaINDEX = 0;
+	  			ledMode = scena[scenaINDEX];
+	  		}
+	  		if (proc) {
+	  			ws2812_setData((void *)&ws2812_arr);
+	  			ws2812_start();
+	  			if ((ledMode == COLOR_ALL) || (ledMode == ZERO_ALL)) {
+	  				cntMode = cntMode_def;
+	  				line_first = true;
+	  				wait_pwm = get_hstmr(2);//1 sec
+	  			} else msec = 20;//30
+	  		}
+	  	}
+	  	//
+		osDelay(msec);
+	}
+  /* USER CODE END StartPwmTask */
+}
 
 /**
   * @brief  Period elapsed callback in non blocking mode

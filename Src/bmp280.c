@@ -9,10 +9,13 @@ HAL_StatusTypeDef i2c_master_read_sensor(uint8_t reg, uint8_t *data_rd, size_t s
 {
     if (!size) return HAL_OK;
 
-    HAL_StatusTypeDef rt  = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, &reg, 1, min_wait_ms);
+    HAL_StatusTypeDef rt = HAL_OK;
 
-                      rt |= HAL_I2C_Master_Receive(&hi2c2, BMP280_ADDR << 1, data_rd, size, max_wait_ms);
-
+    //if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
+    	rt  = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, &reg, 1, min_wait_ms);
+        rt |= HAL_I2C_Master_Receive(&hi2c2, BMP280_ADDR << 1, data_rd, size, max_wait_ms);
+        //osSemaphoreRelease(semDisplayHandle);
+	//}
     i2cError = rt;
     if (i2cError) errLedOn(__func__);
 
@@ -21,18 +24,18 @@ HAL_StatusTypeDef i2c_master_read_sensor(uint8_t reg, uint8_t *data_rd, size_t s
 //-----------------------------------------------------------------------------
 HAL_StatusTypeDef i2c_master_reset_sensor(uint8_t *chip_id)
 {
-
+HAL_StatusTypeDef rt = HAL_OK;
 uint8_t dat[] = {BMP280_REG_RESET, BMP280_RESET_VALUE};
 
-	if ((i2cError = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, 2, max_wait_ms)) != HAL_OK) {
-    	errLedOn(__func__);
-    	return i2cError;
-    }
-
-    dat[0] = BMP280_REG_ID;
-    HAL_StatusTypeDef rt  = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, 1, min_wait_ms);
-                      rt |= HAL_I2C_Master_Receive(&hi2c2, BMP280_ADDR << 1, chip_id, 1, min_wait_ms);
-
+	//if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
+		rt = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, 2, max_wait_ms);
+		if (rt == HAL_OK) {
+			dat[0] = BMP280_REG_ID;
+			rt  = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, 1, min_wait_ms);
+			rt |= HAL_I2C_Master_Receive(&hi2c2, BMP280_ADDR << 1, chip_id, 1, min_wait_ms);
+		}
+		//osSemaphoreRelease(semDisplayHandle);
+	//}
     i2cError = rt;
     if (i2cError) errLedOn(__func__);
 
@@ -41,7 +44,6 @@ uint8_t dat[] = {BMP280_REG_RESET, BMP280_RESET_VALUE};
 //-----------------------------------------------------------------------------
 HAL_StatusTypeDef i2c_master_test_sensor(uint8_t *stat, uint8_t *mode, uint8_t *conf, uint8_t chip_id)
 {
-
 uint8_t dat[] = {BMP280_REG_CTRL,
     		         BMP280_OSRS_T | BMP280_OSRS_P | BMP280_FORCED1_MODE,
 					 BMP280_REG_CONFIG,
@@ -49,24 +51,27 @@ uint8_t dat[] = {BMP280_REG_CTRL,
 					 BME280_REG_CTRL_HUM, //for BME280_SENSOR only
 					 BME280_OSRS_H};      //for BME280_SENSOR only
 uint16_t len = sizeof(dat);
+HAL_StatusTypeDef rt = HAL_OK;
+//bool need = false;
 
     if (chip_id != BME280_SENSOR) len -= 2;
-    if ((i2cError = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, len, max_wait_ms)) != HAL_OK) {
-    	errLedOn(__func__);
-    	return i2cError;
-    }
 
-    HAL_Delay(50);
-
-    dat[0] = BMP280_REG_STATUS;
-    HAL_StatusTypeDef rt = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, 1, min_wait_ms);
-    rt |= HAL_I2C_Master_Receive(&hi2c2, BMP280_ADDR << 1, dat, 3, max_wait_ms);
-
-    if (rt == HAL_OK) {
-    	*stat = dat[0];
-    	*mode = dat[1];
-    	*conf = dat[2];
-    }
+	//if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
+		rt = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, len, max_wait_ms);
+		//need = true;
+	//}
+	if (rt == HAL_OK) {
+		HAL_Delay(50);
+		dat[0] = BMP280_REG_STATUS;
+		rt = HAL_I2C_Master_Transmit(&hi2c2, BMP280_ADDR << 1, dat, 1, min_wait_ms);
+		rt |= HAL_I2C_Master_Receive(&hi2c2, BMP280_ADDR << 1, dat, 3, max_wait_ms);
+		if (rt == HAL_OK) {
+			*stat = dat[0];
+			*mode = dat[1];
+			*conf = dat[2];
+		}
+	}
+	//if (need) osSemaphoreRelease(semDisplayHandle);
 
     i2cError = rt;
     if (i2cError) errLedOn(__func__);
@@ -162,6 +167,7 @@ double t1, p1, h1 = 0.0;
         h1 = var_H;
     }
 
+    ssen->chip = chip_id;
     ssen->temp = t1;
     ssen->pres = p1;
     ssen->humi = h1;

@@ -1,5 +1,5 @@
-# ssd1306
-Little device, example (first try - premiere) : stm32f103C8t6(Black Pill board) + ssd1306 + bmp280 + uart(aka log-console)
+# stm32f103
+Little device, example (first try - premiere) : stm32f103C8t6(Black Pill board) + ssd1306 + bmp280 + uart(aka log-console) + ws2812
 
 ### 1. Utils for programming chip (flash)
 
@@ -9,5 +9,6 @@ Little device, example (first try - premiere) : stm32f103C8t6(Black Pill board) 
 ```
 
 
-### 2. Project created for System Workbench for STM32 - OpenOCD (for Linux 64bits) Version: 1.17.0.201812190825
+### 2. Project created for System Workbench for STM32 (linux version)
+
 
