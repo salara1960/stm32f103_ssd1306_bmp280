@@ -20,7 +20,6 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "cmsis_os.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -47,7 +46,8 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 //const char *ver = "ver. 2.6";//20.04.2019 major changes : add new feature - support ws2812
 //const char *ver = "ver. 2.7";//20.04.2019 major changes : used dma1_ch4 for send data to uart1, used Semaphore for access to uart1
 //const char *ver = "ver. 2.7.1";//21.04.2019 minor changes+
-const char *ver = "ver. 2.8";//22.04.2019 major changes : used i2c1 for ssd1306 and bmp280
+//const char *ver = "ver. 2.8";//22.04.2019 major changes : used i2c1 for ssd1306 and bmp280
+const char *ver = "ver. 2.9";//22.04.2019 final release : i2c1 without dma and interrupt
 
 /* USER CODE END PD */
 
@@ -60,7 +60,6 @@ const char *ver = "ver. 2.8";//22.04.2019 major changes : used i2c1 for ssd1306 
 ADC_HandleTypeDef hadc1;
 
 I2C_HandleTypeDef hi2c1;
-DMA_HandleTypeDef hdma_i2c1_tx;
 
 RTC_HandleTypeDef hrtc;
 
@@ -91,7 +90,7 @@ volatile static float dataADC = 0.0;
 
 static const char *_extDate = "date=";
 volatile uint32_t extDate = 0;
-bool setDate = false;
+static bool setDate = false;
 static char RxBuf[MAX_UART_BUF];
 volatile uint8_t rx_uk;
 volatile uint8_t uRxByte = 0;
@@ -199,7 +198,6 @@ int main(void)
   HAL_ADC_Start_IT(&hadc1);
   //"start" rx_interrupt
   HAL_UART_Receive_IT(&huart1, (uint8_t *)&uRxByte, 1);
-
 
   ssd1306_on(true);//screen ON
   if (!i2cError) {
@@ -611,9 +609,6 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
-  /* DMA1_Channel6_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 5, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
   /* DMA1_Channel7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
@@ -781,9 +776,7 @@ HAL_StatusTypeDef er = HAL_OK;
 	if (!txt) return;
 	size_t len = strlen(txt);
 	if (!len) return;
-
 	if (addTime) len += 24;
-
 	char *stx = (char *)pvPortMalloc(len + 1);
 	if (stx) {
 		stx[0] = 0;
@@ -830,7 +823,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 				} else setDate = true;
 			}
 			rx_uk = 0;
-			RxBuf[rx_uk] = 0;
+			memset(RxBuf, 0, sizeof(RxBuf));
 		} else rx_uk++;
 
 		HAL_UART_Receive_IT(huart, (uint8_t *)&uRxByte, 1);
@@ -865,13 +858,13 @@ void StartDefTask(void const * argument)
 	result_t evt = {0.0, 0.0, 0.0, 0};
 	osEvent event;
 
-/**/
+/*
 	HAL_Delay(10);
 	char tmp[32];
 	sprintf(tmp, "free: %u", xPortGetFreeHeapSize());
 	uint8_t col = ssd1306_calcx(strlen(tmp));
 	ssd1306_text_xy(tmp, col, 1);
-/**/
+*/
 	while (1) {
 
 		if (mailQueue) {

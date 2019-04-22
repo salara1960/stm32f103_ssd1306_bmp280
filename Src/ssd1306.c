@@ -137,6 +137,8 @@ const uint8_t font8x8[128][8] = {
     { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00 }    // U+007F ( )
 };
 
+const uint32_t _mswait = 10;
+
 //******************************************************************************************
 
 void ssd1306_on(bool flag)
@@ -146,9 +148,7 @@ uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0};
     if (flag) dat[1] = OLED_CMD_DISPLAY_ON;
     	 else dat[1] = OLED_CMD_DISPLAY_OFF;
 
-    i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-
-    if (i2cError != HAL_OK) errLedOn(__func__);
+    if ((i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms)) != HAL_OK) errLedOn(__func__);
 }
 //-----------------------------------------------------------------------------------------
 void ssd1306_init()
@@ -169,9 +169,7 @@ uint8_t dat[] = {
 	invert
 };
 
-	i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-
-    if (i2cError != HAL_OK) errLedOn(__func__);
+	if ((i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms)) != HAL_OK) errLedOn(__func__);
 }
 //-----------------------------------------------------------------------------------------
 #ifdef SET_SSD1306_INVERT
@@ -183,9 +181,7 @@ uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0};
 										else invert = OLED_CMD_DISPLAY_INVERTED;
     dat[1] = invert;
 
-    i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-
-    if (i2cError != HAL_OK) errLedOn(__func__);
+    if ((i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms)) != HAL_OK) errLedOn(__func__);
 }
 #endif
 //-----------------------------------------------------------------------------------------
@@ -228,9 +224,7 @@ void ssd1306_contrast(uint8_t value)//0xff or 0x00
 {
 uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_STREAM, OLED_CMD_SET_CONTRAST, value};
 
-	i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-
-	if (i2cError != HAL_OK) errLedOn(__func__);
+	if ((i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms)) != HAL_OK) errLedOn(__func__);
 }
 //-----------------------------------------------------------------------------------------
 uint8_t ssd1306_calcx(int len)
