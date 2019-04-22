@@ -54,12 +54,14 @@ typedef enum {
 	ZERO_ALL,
 	COLOR_ALL
 } dir_mode_t;
+
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
 /* USER CODE BEGIN EC */
 
-I2C_HandleTypeDef hi2c2;
+I2C_HandleTypeDef *portBMP;
+I2C_HandleTypeDef *portSSD;
 UART_HandleTypeDef huart1;
 TIM_HandleTypeDef htim2;
 
@@ -75,7 +77,7 @@ uint8_t GoTxDMA;
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
 
-#define wait_sensor_def 10 // 1 * 10 = 10 sec
+#define wait_sensor_def 10
 #define MAX_UART_BUF 256
 
 /* USER CODE END EM */
@@ -102,16 +104,16 @@ void errLedOn(const char *from);
 #define PWM_GPIO_Port GPIOA
 #define LED1_Pin GPIO_PIN_0
 #define LED1_GPIO_Port GPIOB
-#define SCL_Pin GPIO_PIN_10
-#define SCL_GPIO_Port GPIOB
-#define SDA_Pin GPIO_PIN_11
-#define SDA_GPIO_Port GPIOB
 #define LED2_Pin GPIO_PIN_12
 #define LED2_GPIO_Port GPIOB
 #define TxD_Pin GPIO_PIN_9
 #define TxD_GPIO_Port GPIOA
 #define RxD_Pin GPIO_PIN_10
 #define RxD_GPIO_Port GPIOA
+#define SCL1_Pin GPIO_PIN_6
+#define SCL1_GPIO_Port GPIOB
+#define SDA1_Pin GPIO_PIN_7
+#define SDA1_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
 
 #define LED_ERROR LED2_Pin

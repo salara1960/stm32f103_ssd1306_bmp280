@@ -146,12 +146,9 @@ uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0};
     if (flag) dat[1] = OLED_CMD_DISPLAY_ON;
     	 else dat[1] = OLED_CMD_DISPLAY_OFF;
 
-    //if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
-    	i2cError = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-    	//osSemaphoreRelease(semDisplayHandle);
-    //}
-	if (i2cError != HAL_OK) errLedOn(__func__);
+    i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
 
+    if (i2cError != HAL_OK) errLedOn(__func__);
 }
 //-----------------------------------------------------------------------------------------
 void ssd1306_init()
@@ -171,12 +168,10 @@ uint8_t dat[] = {
 	OLED_CMD_DISPLAY_ON,         //0xAF
 	invert
 };
-	//if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
-		i2cError = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-		//osSemaphoreRelease(semDisplayHandle);
-	//}
-    if (i2cError != HAL_OK) errLedOn(__func__);
 
+	i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
+
+    if (i2cError != HAL_OK) errLedOn(__func__);
 }
 //-----------------------------------------------------------------------------------------
 #ifdef SET_SSD1306_INVERT
@@ -188,12 +183,9 @@ uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0};
 										else invert = OLED_CMD_DISPLAY_INVERTED;
     dat[1] = invert;
 
-    //if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
-    	i2cError = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-    	//osSemaphoreRelease(semDisplayHandle);
-	//}
-    if (i2cError != HAL_OK) errLedOn(__func__);
+    i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
 
+    if (i2cError != HAL_OK) errLedOn(__func__);
 }
 #endif
 //-----------------------------------------------------------------------------------------
@@ -203,14 +195,12 @@ uint8_t i, dat[] = {OLED_CONTROL_BYTE_CMD_SINGLE, 0}, zero[129] = {0};
 HAL_StatusTypeDef rt = HAL_OK;
 
     zero[0] = OLED_CONTROL_BYTE_DATA_STREAM;
-    //if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
-    	for (i = 0; i < 8; i++) {
-    		dat[1] = 0xB0 | i;
-    		rt  = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat,    2, min_wait_ms);
-    		rt |= HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, zero, 129, max_wait_ms);
-    	}
-    	//osSemaphoreRelease(semDisplayHandle);
-    //}
+
+    for (i = 0; i < 8; i++) {
+    	dat[1] = 0xB0 | i;
+    	rt  = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat,    2, min_wait_ms);
+    	rt |= HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, zero, 129, max_wait_ms);
+    }
 
     i2cError = rt;
     if (i2cError) errLedOn(__func__);
@@ -224,14 +214,11 @@ HAL_StatusTypeDef rt = HAL_OK;
 
     buf[0] = OLED_CONTROL_BYTE_DATA_STREAM;
     for (i = 1; i < 129; i++) buf[i] = 0xFF >> (i % 8);
-    //if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
-    	for (i = 0; i < 8; i++) {
-    		dat[1] = 0xB0 | i;
-    		rt  = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat,   2, min_wait_ms);
-    		rt |= HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, buf, 129, max_wait_ms);
-    	}
-    	//osSemaphoreRelease(semDisplayHandle);
-    //}
+    for (i = 0; i < 8; i++) {
+    	dat[1] = 0xB0 | i;
+    	rt  = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat,   2, min_wait_ms);
+    	rt |= HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, buf, 129, max_wait_ms);
+    }
 
     i2cError = rt;
     if (i2cError) errLedOn(__func__);
@@ -241,11 +228,9 @@ void ssd1306_contrast(uint8_t value)//0xff or 0x00
 {
 uint8_t dat[] = {OLED_CONTROL_BYTE_CMD_STREAM, OLED_CMD_SET_CONTRAST, value};
 
-	//if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
-		i2cError = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-		//osSemaphoreRelease(semDisplayHandle);
-	//}
-    if (i2cError != HAL_OK) errLedOn(__func__);
+	i2cError = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
+
+	if (i2cError != HAL_OK) errLedOn(__func__);
 }
 //-----------------------------------------------------------------------------------------
 uint8_t ssd1306_calcx(int len)
@@ -274,27 +259,21 @@ uint8_t first[] = {
 	7
 };
 
-//	if (!semDisplayHandle) return;
-
-	//if (osSemaphoreWait(semDisplayHandle , 1000) == osOK) {
-		rt = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, first, sizeof(first), min_wait_ms);
-		if (rt == HAL_OK) {
-			for (i = 0; i < len; i++) {
-				if (stroka[i] == '\n') {
-					dat[3] = 0xB0 | ++lin;
-					rt = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
-				} else {
-					memcpy(&cif[1], &font8x8[(uint8_t)stroka[i]][0], 8);
-					rt = HAL_I2C_Master_Transmit(&hi2c2, OLED_I2C_ADDRESS, cif, sizeof(cif), min_wait_ms);
-				}
+	rt = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, first, sizeof(first), min_wait_ms);
+	if (rt == HAL_OK) {
+		for (i = 0; i < len; i++) {
+			if (stroka[i] == '\n') {
+				dat[3] = 0xB0 | ++lin;
+				rt = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, dat, sizeof(dat), min_wait_ms);
+			} else {
+				memcpy(&cif[1], &font8x8[(uint8_t)stroka[i]][0], 8);
+				rt = HAL_I2C_Master_Transmit(portSSD, OLED_I2C_ADDRESS, cif, sizeof(cif), min_wait_ms);
 			}
 		}
-		//osSemaphoreRelease(semDisplayHandle);
-	//}
+	}
 
     i2cError = rt;
     if (i2cError) errLedOn(__func__);
-
 }
 //-----------------------------------------------------------------------------------------
 void ssd1306_text(const char *stroka)

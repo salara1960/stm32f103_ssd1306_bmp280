@@ -22,24 +22,17 @@ void ws2812_init(void)
 //------------------------------------------------------------------
 void ws2812_pixel_to_buf(rgb_t colors, uint16_t posX)
 {
+uint16_t word;
+
 	for (uint16_t i = 0; i < LED_COUNT; i++) {
-		if (BitIsSet(colors.red, (7 - i)) == 1) {
-			rgb_BUF[DELAY_LEN + posX * 24 + i + 8] = HIGH;
-		} else {
-			rgb_BUF[DELAY_LEN + posX * 24 + i + 8] = LOW;
-		}
+		if (BitIsSet(colors.red, (7 - i)) == 1) word = HIGH; else word = LOW;
+		rgb_BUF[DELAY_LEN + posX * 24 + i + 8] = word;
 
-		if (BitIsSet(colors.green, (7 - i)) == 1) {
-			rgb_BUF[DELAY_LEN + posX * 24 + i + 0] = HIGH;
-		} else {
-			rgb_BUF[DELAY_LEN + posX * 24 + i + 0] = LOW;
-		}
+		if (BitIsSet(colors.green, (7 - i)) == 1) word = HIGH; else word = LOW;
+		rgb_BUF[DELAY_LEN + posX * 24 + i + 0] = word;
 
-		if (BitIsSet(colors.blue, (7 - i)) == 1) {
-			rgb_BUF[DELAY_LEN + posX * 24 + i + 16] = HIGH;
-		} else {
-			rgb_BUF[DELAY_LEN + posX * 24 + i + 16] = LOW;
-		}
+		if (BitIsSet(colors.blue, (7 - i)) == 1) word = HIGH; else word = LOW;
+		rgb_BUF[DELAY_LEN + posX * 24 + i + 16] = word;
 	}
 }
 //------------------------------------------------------------------

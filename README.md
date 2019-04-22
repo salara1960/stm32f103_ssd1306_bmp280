@@ -1,5 +1,5 @@
 # stm32f103
-Little device, example (first try - premiere) : stm32f103C8t6(Black Pill board) + ssd1306 + bmp280 + uart(aka log-console) + ws2812
+stm32f103C8t6(Black Pill board) + ssd1306 + bmp280 + uart(aka log-console) + ws2812 + freeRTOS
 
 ### 1. Utils for programming chip (flash)
 

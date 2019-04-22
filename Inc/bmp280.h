@@ -35,7 +35,6 @@
 
 #define DATA_LENGTH                 256        //!<Data buffer length for test buffer
 
-
 typedef struct bmp280_calib_t {
 	uint16_t dig_T1;
 	int16_t  dig_T2;
@@ -65,8 +64,6 @@ typedef struct {
 	double humi;// %rH
 } result_t;
 #pragma pack(pop)
-
-//result_t sensors;
 
 HAL_StatusTypeDef i2c_master_read_sensor(uint8_t reg, uint8_t *data_rd, size_t size);
 HAL_StatusTypeDef i2c_master_reset_sensor(uint8_t *chip_id);

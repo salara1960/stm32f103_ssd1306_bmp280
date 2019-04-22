@@ -45,7 +45,9 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 //const char *ver = "ver. 2.4";//16.04.2019 major changes : add freeRTOS
 //const char *ver = "ver. 2.5";//19.04.2019 major changes : add mailQueue
 //const char *ver = "ver. 2.6";//20.04.2019 major changes : add new feature - support ws2812
-const char *ver = "ver. 2.7";//20.04.2019 major changes : used dma1_ch4 for send data to uart1, used Semaphore for access to uart1
+//const char *ver = "ver. 2.7";//20.04.2019 major changes : used dma1_ch4 for send data to uart1, used Semaphore for access to uart1
+//const char *ver = "ver. 2.7.1";//21.04.2019 minor changes+
+const char *ver = "ver. 2.8";//22.04.2019 major changes : used i2c1 for ssd1306 and bmp280
 
 /* USER CODE END PD */
 
@@ -57,7 +59,8 @@ const char *ver = "ver. 2.7";//20.04.2019 major changes : used dma1_ch4 for send
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
 
-I2C_HandleTypeDef hi2c2;
+I2C_HandleTypeDef hi2c1;
+DMA_HandleTypeDef hdma_i2c1_tx;
 
 RTC_HandleTypeDef hrtc;
 
@@ -74,12 +77,14 @@ osThreadId pwmTaskHandle;
 osSemaphoreId semUartHandle;
 /* USER CODE BEGIN PV */
 
+I2C_HandleTypeDef *portBMP;
+I2C_HandleTypeDef *portSSD;
+
 osMailQId mailQueue = NULL;
 
 HAL_StatusTypeDef i2cError = HAL_OK;
 const uint32_t min_wait_ms = 350;
 const uint32_t max_wait_ms = 1000;
-result_t sensors = {0.0, 0.0, 0.0};
 volatile static uint32_t secCounter = 0;
 volatile static uint64_t HalfSecCounter = 0;
 volatile static float dataADC = 0.0;
@@ -92,6 +97,7 @@ volatile uint8_t rx_uk;
 volatile uint8_t uRxByte = 0;
 
 uint8_t GoTxDMA = 0;
+
 const rgb_t ws2812_const[LED_COUNT] = {
 	RGB_SET(L64,   0,   0),
 	RGB_SET(0,   L64,   0),
@@ -122,8 +128,8 @@ static void MX_USART1_UART_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_RTC_Init(void);
 static void MX_TIM1_Init(void);
-static void MX_I2C2_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_I2C1_Init(void);
 void StartDefTask(void const * argument);
 void StartBmpTask(void const * argument);
 void StartPwmTask(void const * argument);
@@ -178,9 +184,11 @@ int main(void)
   MX_ADC1_Init();
   MX_RTC_Init();
   MX_TIM1_Init();
-  MX_I2C2_Init();
   MX_TIM2_Init();
+  MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
+
+  portBMP = portSSD = &hi2c1;
 
   HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
 
@@ -237,7 +245,7 @@ int main(void)
 
   /* Create the thread(s) */
   /* definition and creation of defTask */
-  osThreadDef(defTask, StartDefTask, osPriorityAboveNormal, 0, 576);
+  osThreadDef(defTask, StartDefTask, osPriorityAboveNormal, 0, 768);
   defTaskHandle = osThreadCreate(osThread(defTask), NULL);
 
   /* definition and creation of bmpTask */
@@ -361,36 +369,36 @@ static void MX_ADC1_Init(void)
 }
 
 /**
-  * @brief I2C2 Initialization Function
+  * @brief I2C1 Initialization Function
   * @param None
   * @retval None
   */
-static void MX_I2C2_Init(void)
+static void MX_I2C1_Init(void)
 {
 
-  /* USER CODE BEGIN I2C2_Init 0 */
+  /* USER CODE BEGIN I2C1_Init 0 */
 
-  /* USER CODE END I2C2_Init 0 */
+  /* USER CODE END I2C1_Init 0 */
 
-  /* USER CODE BEGIN I2C2_Init 1 */
+  /* USER CODE BEGIN I2C1_Init 1 */
 
-  /* USER CODE END I2C2_Init 1 */
-  hi2c2.Instance = I2C2;
-  hi2c2.Init.ClockSpeed = 400000;
-  hi2c2.Init.DutyCycle = I2C_DUTYCYCLE_2;
-  hi2c2.Init.OwnAddress1 = 0;
-  hi2c2.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c2.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c2.Init.OwnAddress2 = 0;
-  hi2c2.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c2.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c2) != HAL_OK)
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 400000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
   {
     Error_Handler();
   }
-  /* USER CODE BEGIN I2C2_Init 2 */
+  /* USER CODE BEGIN I2C1_Init 2 */
 
-  /* USER CODE END I2C2_Init 2 */
+  /* USER CODE END I2C1_Init 2 */
 
 }
 
@@ -603,6 +611,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Channel4_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+  /* DMA1_Channel6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 5, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
   /* DMA1_Channel7_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Channel7_IRQn, 4, 0);
   HAL_NVIC_EnableIRQ(DMA1_Channel7_IRQn);
@@ -733,7 +744,6 @@ void errLedOn(const char *from)
 	}
 }
 //----------------------------------------------------------------------------------------
-//  if (return pointer != NULL) you must free this pointer after used
 void sec_to_string(uint32_t sec, char *stx)
 {
 	if (!setDate) {//no valid date in RTC
@@ -784,10 +794,12 @@ HAL_StatusTypeDef er = HAL_OK;
 			sec_to_string(ep, stx);
 		}
 		strcat(stx, txt);
+
 		if (osSemaphoreWait(semUartHandle, 2000) == osOK) {
 			er = HAL_UART_Transmit_DMA(&huart1, (uint8_t *)stx, strlen(stx));
 			osSemaphoreRelease(semUartHandle);
 		} else er = HAL_ERROR;
+
 		vPortFree(stx);
 	} else er = HAL_ERROR;
 
@@ -813,13 +825,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 					if (strlen(uk) < 10) setDate = false;
 					else {
 						extDate = atoi(uk);
-						//sprintf(RxBuf, "%s:%lu\r\n", _extDate, extDate);
 						set_Date((time_t)extDate);
 					}
 				} else setDate = true;
 			}
-			//Report(RxBuf, false);
-			//memset(RxBuf, 0, MAX_UART_BUF);
 			rx_uk = 0;
 			RxBuf[rx_uk] = 0;
 		} else rx_uk++;
@@ -855,6 +864,7 @@ void StartDefTask(void const * argument)
 	result_t *ones = NULL;
 	result_t evt = {0.0, 0.0, 0.0, 0};
 	osEvent event;
+
 /**/
 	HAL_Delay(10);
 	char tmp[32];
@@ -891,7 +901,7 @@ void StartDefTask(void const * argument)
 #endif
 					ssd1306_text_xy(toScreen, 1, 6);//send string to screen
 			}
-			Report(stx, true);//send data to UART1
+			Report(stx, true);
 		}
 
 		osDelay(100);
@@ -986,8 +996,7 @@ void StartPwmTask(void const * argument)
 
 	//for WS2812 : tim2_channel2 + dma1_channel7
 	uint8_t scenaINDEX = 0;
-	bool new_scena = false;
-	bool proc = true;
+	bool new_scena = false, proc = true;
 	const uint8_t maxSCENA = sizeof(scena);
 	dir_mode_t ledMode = scena[scenaINDEX];
 	static rgb_t ws2812_arr[LED_COUNT];
