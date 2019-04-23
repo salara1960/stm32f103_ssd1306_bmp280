@@ -27,6 +27,7 @@
 #include "ssd1306.h"
 #include "bmp280.h"
 #include "ws2812.h"
+#include "bh1750.h"
 /*
 post-build steps command:
 arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtifactFileBaseName}.bin" && ls -la | grep "${BuildArtifactFileBaseName}.*"
@@ -47,7 +48,8 @@ arm-none-eabi-objcopy -O binary "${BuildArtifactFileBaseName}.elf" "${BuildArtif
 //const char *ver = "ver. 2.7";//20.04.2019 major changes : used dma1_ch4 for send data to uart1, used Semaphore for access to uart1
 //const char *ver = "ver. 2.7.1";//21.04.2019 minor changes+
 //const char *ver = "ver. 2.8";//22.04.2019 major changes : used i2c1 for ssd1306 and bmp280
-const char *ver = "ver. 2.9";//22.04.2019 final release : i2c1 without dma and interrupt
+//const char *ver = "ver. 2.9";//22.04.2019 final release : i2c1 without dma and interrupt
+const char *ver = "ver. 3.0";//23.04.2019 final release+ : add bh1750 sensor
 
 /* USER CODE END PD */
 
@@ -78,6 +80,7 @@ osSemaphoreId semUartHandle;
 
 I2C_HandleTypeDef *portBMP;
 I2C_HandleTypeDef *portSSD;
+I2C_HandleTypeDef *portBH;
 
 osMailQId mailQueue = NULL;
 
@@ -130,7 +133,7 @@ static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_I2C1_Init(void);
 void StartDefTask(void const * argument);
-void StartBmpTask(void const * argument);
+void StartSensTask(void const * argument);
 void StartPwmTask(void const * argument);
 
 /* USER CODE BEGIN PFP */
@@ -187,7 +190,9 @@ int main(void)
   MX_I2C1_Init();
   /* USER CODE BEGIN 2 */
 
-  portBMP = portSSD = &hi2c1;
+  portBMP = &hi2c1;
+  portSSD = &hi2c1;
+  portBH  = &hi2c1;
 
   HAL_GPIO_WritePin(GPIOB, LED1_Pin | LED_ERROR, GPIO_PIN_SET);//LEDs OFF
 
@@ -213,6 +218,8 @@ int main(void)
 		  }
       }
   }
+
+  bh1750_off();
 
   /* USER CODE END 2 */
 
@@ -246,9 +253,9 @@ int main(void)
   osThreadDef(defTask, StartDefTask, osPriorityAboveNormal, 0, 768);
   defTaskHandle = osThreadCreate(osThread(defTask), NULL);
 
-  /* definition and creation of bmpTask */
-  osThreadDef(bmpTask, StartBmpTask, osPriorityNormal, 0, 384);
-  bmpTaskHandle = osThreadCreate(osThread(bmpTask), NULL);
+  /* definition and creation of sensTask */
+  osThreadDef(sensTask, StartSensTask, osPriorityNormal, 0, 384);
+  bmpTaskHandle = osThreadCreate(osThread(sensTask), NULL);
 
   /* definition and creation of pwmTask */
   osThreadDef(pwmTask, StartPwmTask, osPriorityNormal, 0, 384);
@@ -855,7 +862,7 @@ void StartDefTask(void const * argument)
 	}
 	char toScreen[64] = {0};
 	result_t *ones = NULL;
-	result_t evt = {0.0, 0.0, 0.0, 0};
+	result_t evt;
 	osEvent event;
 
 /*
@@ -875,7 +882,7 @@ void StartDefTask(void const * argument)
 			memcpy((uint8_t *)&evt, (uint8_t *)ones, sizeof(result_t));
 			osMailFree(mailQueue, ones);
 			ones = NULL;
-			sprintf(stx, "Vcc=%.3f v, ", dataADC);
+			sprintf(stx, "Vcc=%.3f v; ", dataADC);
 			switch (evt.chip) {
 					case BMP280_SENSOR : strcat(stx, "BMP280:"); break;
 					case BME280_SENSOR : strcat(stx, "BME280:"); break;
@@ -883,16 +890,21 @@ void StartDefTask(void const * argument)
 			}
 			sprintf(stx+strlen(stx), " Press=%.2f mmHg, Temp=%.2f DegC", evt.pres, evt.temp);
 			if (evt.chip == BME280_SENSOR) sprintf(stx+strlen(stx), " Humidity=%.2f %%rH", evt.humi);
-			strcat(stx, "\r\n");
+			sprintf(stx+strlen(stx),"; BH1750: Lux=%.2f lx\r\n", evt.lux);
 			//
 			if (i2cError == HAL_OK) {
+				uint8_t row = 6;
 				sprintf(toScreen, "mmHg : %.2f\nDegC : %.2f", evt.pres, evt.temp);
-				if (evt.chip == BME280_SENSOR) sprintf(toScreen+strlen(toScreen), "\nHumi:%.2f %%rH", evt.humi);
+				if (evt.chip == BME280_SENSOR) {
+					sprintf(toScreen+strlen(toScreen), "\nHumi: %.2f %%rH", evt.humi);
+					row = 5;
+				}
+				sprintf(toScreen+strlen(toScreen), "\nLux  : %.2f", evt.lux);
 #ifdef SET_SSD1306_INVERT
 				ssd1306_invert();
 				if (!i2cError)
 #endif
-					ssd1306_text_xy(toScreen, 1, 6);//send string to screen
+					ssd1306_text_xy(toScreen, 1, row);//send string to screen
 			}
 			Report(stx, true);
 		}
@@ -910,7 +922,7 @@ void StartDefTask(void const * argument)
 * @retval None
 */
 /* USER CODE END Header_StartBmpTask */
-void StartBmpTask(void const * argument)
+void StartSensTask(void const * argument)
 {
   /* USER CODE BEGIN StartBmpTask */
 	/* Infinite loop */
@@ -928,12 +940,21 @@ void StartBmpTask(void const * argument)
 	result_t sens;
 	result_t *ones = NULL;
 
+	uint16_t lux = 0;
+	float lx = -1.0;
+	bh1750_on_mode();
+
 	uint32_t wait_sensor = get_tmr(2);
 
 	while (1) {
 
 		if (check_tmr(wait_sensor)) {
 			wait_sensor = get_tmr(wait_sensor_def);
+			//--------------------  BH1750  ---------------------------------
+			lx = -1.0;
+			if (bh1750_proc(&lux) == HAL_OK) lx = lux / 1.2;
+			sens.lux = lx;
+			//--------------------  BMP280  ---------------------------------
 			if (i2c_master_reset_sensor(&reg_id) != HAL_OK) {
 				wait_sensor = get_tmr(2);
 				continue;

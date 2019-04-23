@@ -55,6 +55,17 @@ typedef enum {
 	COLOR_ALL
 } dir_mode_t;
 
+#pragma pack(push,1)
+typedef struct {
+	uint8_t chip;
+	double temp;// DegC
+	double pres;// mmHg
+	double humi;// %rH
+	float lux;// lux
+} result_t;
+#pragma pack(pop)
+
+
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -62,6 +73,7 @@ typedef enum {
 
 I2C_HandleTypeDef *portBMP;
 I2C_HandleTypeDef *portSSD;
+I2C_HandleTypeDef *portBH;
 UART_HandleTypeDef huart1;
 TIM_HandleTypeDef htim2;
 

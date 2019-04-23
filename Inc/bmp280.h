@@ -56,14 +56,6 @@ typedef struct bmp280_calib_t {
 	int8_t   dig_H6;
 } bmx280_calib_t;
 
-#pragma pack(push,1)
-typedef struct {
-	uint8_t chip;
-	double temp;// DegC
-	double pres;// mmHg
-	double humi;// %rH
-} result_t;
-#pragma pack(pop)
 
 HAL_StatusTypeDef i2c_master_read_sensor(uint8_t reg, uint8_t *data_rd, size_t size);
 HAL_StatusTypeDef i2c_master_reset_sensor(uint8_t *chip_id);

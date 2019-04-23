@@ -25,6 +25,7 @@
 "Middlewares/FreeRTOS/queue.o"
 "Middlewares/FreeRTOS/tasks.o"
 "Middlewares/FreeRTOS/timers.o"
+"Src/bh1750.o"
 "Src/bmp280.o"
 "Src/freertos.o"
 "Src/main.o"
